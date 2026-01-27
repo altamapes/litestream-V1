@@ -69,18 +69,20 @@
 
         /* Admin Panel New Styles */
         .admin-tab { 
-            @apply px-8 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-all border border-transparent hover:text-white cursor-pointer bg-slate-900 border-slate-800; 
+            @apply px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-wider text-slate-500 transition-all hover:text-slate-300 cursor-pointer border border-transparent; 
         }
         .admin-tab.active { 
             background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); 
             color: white; 
-            border-color: transparent;
-            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
-            text-shadow: 0 0 5px rgba(255,255,255,0.5);
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+            padding-left: 1.5rem;
+            padding-right: 1.5rem;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
         }
-        .user-card-row { 
-            @apply bg-slate-900 border border-slate-800 rounded-2xl px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-4 mb-3 transition-all hover:border-slate-700 hover:bg-slate-900/80; 
+        .user-row-item {
+            @apply grid grid-cols-12 gap-4 p-6 items-center border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors;
         }
+        .user-row-item:last-child { border-bottom: none; }
     </style>
 </head>
 <body class="min-h-screen">
@@ -524,7 +526,7 @@
                 <h2 class="text-2xl font-bold">Admin Panel</h2>
 
                 <!-- User Filter Tabs -->
-                <div class="flex flex-wrap gap-2 mb-8" id="admin-tabs-container">
+                <div class="flex flex-wrap gap-1 mb-8" id="admin-tabs-container">
                     <button onclick="filterUsers('all')" class="admin-tab active" id="tab-user-all">ALL USERS</button>
                     <button onclick="filterUsers('Trial')" class="admin-tab" id="tab-user-Trial">TRIAL</button>
                     <button onclick="filterUsers('Starter')" class="admin-tab" id="tab-user-Starter">STARTER</button>
@@ -532,16 +534,19 @@
                     <button onclick="filterUsers('Sultan')" class="admin-tab" id="tab-user-Sultan">SULTAN</button>
                 </div>
 
-                <!-- Admin Card Header -->
-                <div class="hidden md:flex justify-between px-8 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <div class="w-1/3">User</div>
-                    <div class="w-1/3 text-center">Status / Expire</div>
-                    <div class="w-1/3 text-right">Actions</div>
-                </div>
+                <!-- Admin User List Container (Card Style) -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+                    <!-- Admin Card Header -->
+                    <div class="hidden md:flex justify-between px-6 py-4 bg-slate-900/50 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        <div class="w-1/3 pl-2">User</div>
+                        <div class="w-1/3 text-center">Status / Expire</div>
+                        <div class="w-1/3 text-right pr-2">Actions</div>
+                    </div>
 
-                <!-- User Card List -->
-                <div id="user-list-container" class="space-y-3">
-                    <!-- Cards Injected via JS -->
+                    <!-- User Card List -->
+                    <div id="user-list-container">
+                        <!-- Cards Injected via JS -->
+                    </div>
                 </div>
             </div>
         </main>
@@ -1006,22 +1011,22 @@
                 const planNameUpper = (u.plan_name || 'Standard').toUpperCase();
                 
                 return `
-                <div class="user-card-row">
+                <div class="user-row-item">
                     <!-- Left: User Info -->
-                    <div class="flex flex-col md:w-1/3">
+                    <div class="col-span-12 md:col-span-4 flex flex-col pl-2">
                         <span class="text-sm font-bold text-white tracking-wide">${u.username}</span>
                         <span class="text-[10px] font-bold text-indigo-400 uppercase mt-0.5 tracking-wider">${planNameUpper} STREAM</span>
                     </div>
 
                     <!-- Center: Status -->
-                    <div class="md:w-1/3 text-center">
-                        <span class="text-xs font-bold text-emerald-400">
+                    <div class="col-span-6 md:col-span-4 text-center">
+                        <span class="text-xs font-bold text-emerald-400 font-mono">
                             Exp: ${mockDate}
                         </span>
                     </div>
 
                     <!-- Right: Actions -->
-                    <div class="md:w-1/3 flex justify-end gap-2">
+                    <div class="col-span-6 md:col-span-4 flex justify-end gap-2 pr-2">
                         <button onclick="alert('Manage ${u.username}')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-[10px] font-bold uppercase shadow-lg shadow-indigo-600/30 transition-all tracking-wider">
                             MANAGE
                         </button>
