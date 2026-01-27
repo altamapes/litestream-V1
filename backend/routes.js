@@ -134,7 +134,7 @@ router.get('/stream/status', async (req, res) => {
 });
 
 router.post('/playlist/start', async (req, res) => {
-  const { ids, rtmpUrl, coverImageId, loop } = req.body;
+  const { ids, rtmpUrl, coverImageId, loop, title, description } = req.body;
   const userId = req.session.user.id;
 
   if (!ids || ids.length === 0) return res.status(400).json({ error: "Pilih minimal 1 media" });
@@ -184,7 +184,7 @@ router.post('/playlist/start', async (req, res) => {
 
       try {
           // startStream kini return Promise<streamId>
-          const streamId = await startStream(playlistPaths, rtmpUrl, { userId, loop: !!loop, coverImagePath: finalCoverPath });
+          const streamId = await startStream(playlistPaths, rtmpUrl, { userId, loop: !!loop, coverImagePath: finalCoverPath, title, description });
           res.json({ success: true, message: `Streaming dimulai.`, streamId });
       } catch (e) { res.status(500).json({ error: "Engine Error: " + e.message }); }
     });

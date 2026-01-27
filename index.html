@@ -136,73 +136,80 @@
 
             <div class="p-6 overflow-y-auto space-y-5 custom-scrollbar flex-1">
                 
-                <!-- Stream Destinations -->
-                <div>
-                    <div class="flex justify-between items-center mb-2">
-                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stream Destinations</label>
-                        <span class="text-[10px] font-bold text-indigo-400">0 added</span>
+                <!-- Stream Info -->
+                <div class="space-y-3">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stream Details</label>
+                    <div class="relative">
+                        <i class="fas fa-heading absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="modal-stream-title" placeholder="Stream Title (e.g., Chill Vibes Radio)" 
+                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600">
                     </div>
-                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center text-slate-600 gap-2">
-                        <p class="text-xs italic">No destinations added yet.</p>
+                    <div class="relative">
+                        <i class="fas fa-align-left absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                        <textarea id="modal-stream-desc" placeholder="Stream Description..." rows="2"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600 resize-none"></textarea>
                     </div>
                 </div>
 
                 <!-- Platform Selection -->
-                <div class="relative">
-                    <div class="flex gap-2">
-                        <div class="relative flex-1">
-                            <i class="fas fa-link absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                            <input type="text" id="modal-platform-display" readonly placeholder="Pilih Platform via List (Custom Locked)" 
-                                class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs font-bold text-white outline-none cursor-not-allowed opacity-70">
+                <div>
+                     <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Destination</label>
+                    <div class="relative">
+                        <div class="flex gap-2">
+                            <div class="relative flex-1">
+                                <i class="fas fa-link absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                                <input type="text" id="modal-platform-display" readonly placeholder="Select Platform" 
+                                    class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs font-bold text-white outline-none cursor-not-allowed opacity-70">
+                            </div>
+                            <button onclick="togglePlatformDropdown()" class="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-indigo-400 w-12 rounded-xl flex items-center justify-center transition-all">
+                                <i class="fas fa-list"></i>
+                            </button>
                         </div>
-                        <button onclick="togglePlatformDropdown()" class="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-indigo-400 w-12 rounded-xl flex items-center justify-center transition-all">
-                            <i class="fas fa-list"></i>
-                        </button>
+
+                        <div id="platform-dropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
+                            <button onclick="selectModalPlatform('YouTube', 'youtube')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                                <i class="fab fa-youtube text-red-500 w-4"></i> YouTube
+                            </button>
+                            <button onclick="selectModalPlatform('Facebook', 'facebook')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                                <i class="fab fa-facebook text-blue-500 w-4"></i> Facebook
+                            </button>
+                            <button onclick="selectModalPlatform('Twitch', 'twitch')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                                <i class="fab fa-twitch text-purple-500 w-4"></i> Twitch
+                            </button>
+                            <div class="h-px bg-slate-700 my-1"></div>
+                            <button onclick="selectModalPlatform('Custom RTMP', 'custom')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                                <i class="fas fa-server text-slate-400 w-4"></i> Custom RTMP
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="modal-platform-value">
+                    <div id="modal-custom-url-group" class="hidden relative mt-2">
+                        <i class="fas fa-globe absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="modal-custom-url" placeholder="rtmp://server/app" 
+                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500">
                     </div>
 
-                    <div id="platform-dropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
-                        <button onclick="selectModalPlatform('YouTube', 'youtube')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                            <i class="fab fa-youtube text-red-500 w-4"></i> YouTube
-                        </button>
-                        <button onclick="selectModalPlatform('Facebook', 'facebook')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                            <i class="fab fa-facebook text-blue-500 w-4"></i> Facebook
-                        </button>
-                        <button onclick="selectModalPlatform('Twitch', 'twitch')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                            <i class="fab fa-twitch text-purple-500 w-4"></i> Twitch
-                        </button>
-                        <div class="h-px bg-slate-700 my-1"></div>
-                        <button onclick="selectModalPlatform('Custom RTMP', 'custom')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                            <i class="fas fa-server text-slate-400 w-4"></i> Custom RTMP
-                        </button>
+                    <div class="relative mt-2">
+                        <i class="fas fa-key absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                        <input type="password" id="modal-stream-key" placeholder="Stream Key" 
+                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 font-mono">
                     </div>
                 </div>
-                
-                <input type="hidden" id="modal-platform-value">
-                <div id="modal-custom-url-group" class="hidden relative">
-                    <i class="fas fa-globe absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                    <input type="text" id="modal-custom-url" placeholder="rtmp://server/app" 
-                        class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500">
-                </div>
 
-                <div class="relative">
-                    <i class="fas fa-key absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                    <input type="password" id="modal-stream-key" placeholder="Stream Key" 
-                        class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 font-mono">
-                </div>
-
+                <!-- Media Selection -->
                 <div>
-                    <h3 class="text-[10px] font-bold text-white mb-2">Schedule Settings</h3>
-                </div>
-
-                <div class="flex justify-between items-center">
-                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LOOP PLAYLIST</label>
-                    <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
-                        <input type="checkbox" name="toggle" id="modal-loop-toggle" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
-                        <label for="modal-loop-toggle" class="toggle-label block overflow-hidden h-4 rounded-full bg-slate-700 cursor-pointer"></label>
+                     <div class="flex justify-between items-center mb-2">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Playlist</label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[9px] font-bold text-slate-500 uppercase">Loop</span>
+                             <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
+                                <input type="checkbox" name="toggle" id="modal-loop-toggle" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                                <label for="modal-loop-toggle" class="toggle-label block overflow-hidden h-4 rounded-full bg-slate-700 cursor-pointer"></label>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <div>
                     <div class="flex gap-2 mb-2">
                         <button onclick="switchModalMediaTab('video')" id="mmt-video" class="modal-media-tab active px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">VIDEOS</button>
                         <button onclick="switchModalMediaTab('audio')" id="mmt-audio" class="modal-media-tab px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">AUDIOS</button>
@@ -517,6 +524,10 @@
             
             modalWrapper.classList.remove('hidden');
             modalWrapper.classList.add('flex');
+
+            // Reset Fields
+            document.getElementById('modal-stream-title').value = '';
+            document.getElementById('modal-stream-desc').value = '';
             
             requestAnimationFrame(() => {
                 modalCard.classList.add('active');
@@ -610,6 +621,8 @@
             const customUrlVal = document.getElementById('modal-custom-url').value;
             const keyVal = document.getElementById('modal-stream-key').value;
             const loopVal = document.getElementById('modal-loop-toggle').checked;
+            const titleVal = document.getElementById('modal-stream-title').value;
+            const descVal = document.getElementById('modal-stream-desc').value;
 
             if (!platformVal) { showToast('Please select a platform', 'error'); return; }
             if (!keyVal) { showToast('Stream Key is required', 'error'); return; }
@@ -630,7 +643,9 @@
                     body: JSON.stringify({ 
                         ids: Array.from(modalSelectedMedia), 
                         rtmpUrl, 
-                        loop: loopVal 
+                        loop: loopVal,
+                        title: titleVal,
+                        description: descVal
                     }) 
                 });
                 const d = await res.json();

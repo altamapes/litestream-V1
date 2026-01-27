@@ -9,7 +9,7 @@ const { db } = require('./database');
 const activeStreams = new Map();
 
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
-  const { userId, loop = false, coverImagePath } = options;
+  const { userId, loop = false, coverImagePath, title, description } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
   const isAllAudio = files.every(f => f.toLowerCase().endsWith('.mp3'));
   
@@ -109,7 +109,8 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             activeInputStream,
             startTime: Date.now(),
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : (rtmpUrl.includes('facebook') ? 'Facebook' : (rtmpUrl.includes('twitch') ? 'Twitch' : 'Custom')),
-            name: `Stream ${streamId.substr(0,4)}`
+            name: title || `Stream ${streamId.substr(0,4)}`,
+            description: description || ''
         });
         
         if (global.io) global.io.emit('log', { type: 'start', message: `Stream ${streamId} Started.`, streamId });
