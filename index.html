@@ -1,0 +1,524 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LiteStream - Multi-Platform Streaming Server</title>
+    
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'%3E%3Cpath d='M13 10V3L4 14h7v7l9-11h-7z'/%3E%3C/svg%3E">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        
+        :root { --accent: #6366f1; --bg: #0f172a; }
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: var(--bg); 
+            color: #f8fafc;
+            margin: 0; padding: 0;
+        }
+
+        .nav-link.active { color: white; background: rgba(99, 102, 241, 0.2); border-radius: 12px; }
+        .nav-link.active i { color: #818cf8; }
+
+        .tab-content { display: none; opacity: 0; transform: translateY(10px); transition: all 0.3s ease; }
+        .tab-content.active { display: block; opacity: 1; transform: translateY(0); }
+
+        .media-subtab.active { background: #6366f1; color: white; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3); }
+
+        .glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+        .hero-bg { background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 50%); }
+        
+        .view-section { display: none !important; }
+        .view-section.active-view { display: block !important; }
+        #main-app.active-view { display: flex !important; }
+        
+        .pulse-live { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); animation: pulse 2s infinite; }
+        @keyframes pulse { 70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+
+        .toast-enter { transform: translateY(20px); opacity: 0; }
+        .toast-enter-active { transform: translateY(0); opacity: 1; transition: all 0.3s ease-out; }
+        .toast-exit { transform: translateY(0); opacity: 1; }
+        .toast-exit-active { transform: translateY(20px); opacity: 0; transition: all 0.3s ease-in; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div id="landing-view" class="view-section active-view relative overflow-hidden min-h-screen">
+        <div class="absolute inset-0 hero-bg -z-10"></div>
+        <nav class="fixed top-0 left-0 right-0 z-50 px-6 py-6 lg:px-20 flex justify-between items-center glass border-b border-slate-800">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg"><i class="fas fa-bolt text-white"></i></div>
+                <span class="text-xl font-bold tracking-tight">LiteStream</span>
+            </div>
+            <div class="hidden md:flex gap-8 text-sm font-semibold text-slate-400">
+                <a href="#features" class="hover:text-white transition-colors">Features</a>
+                <a href="#pricing" class="hover:text-white transition-colors">Pricing</a>
+            </div>
+            <button onclick="showAuth()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-full font-bold text-sm shadow-xl transition-all">Dashboard</button>
+        </nav>
+
+        <section class="pt-40 pb-16 px-6 lg:px-20 text-center max-w-5xl mx-auto">
+            <h1 id="landing-title-display" class="text-5xl lg:text-7xl font-extrabold leading-tight mb-8">Broadcast Anywhere <br> from <span class="text-indigo-400">Any VPS.</span></h1>
+            <p id="landing-desc-display" class="text-lg text-slate-400 mb-12">Server streaming paling ringan di dunia. Dirancang khusus untuk VPS 1GB RAM.</p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <button id="landing-btn-reg-display" onclick="showAuth('register')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-5 rounded-3xl font-bold shadow-2xl transition-all">Daftar Sekarang</button>
+                <button id="landing-btn-login-display" onclick="showAuth('login')" class="bg-slate-800 hover:bg-slate-700 text-white px-10 py-5 rounded-3xl font-bold border border-slate-700">Login Member</button>
+            </div>
+        </section>
+
+        <section id="pricing" class="py-24 px-6 lg:px-20 bg-slate-950/50">
+            <div class="text-center mb-16"><h2 class="text-4xl font-bold mb-4">Pilih Paket Streaming</h2></div>
+            <div id="pricing-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto"></div>
+        </section>
+        
+        <footer class="py-10 text-center border-t border-slate-800 text-slate-600 text-[10px] uppercase font-bold tracking-widest">
+            &copy; 2024 LiteStream Engine. Crafted for Low-Specs.
+        </footer>
+    </div>
+
+    <div id="login-view" class="hidden fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-xl flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-[2.5rem] p-8 space-y-8 shadow-2xl relative">
+            <button onclick="hideAuth()" class="absolute top-6 right-6 text-slate-500 hover:text-white"><i class="fas fa-times"></i></button>
+            <div class="text-center">
+                <div class="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4"><i class="fas fa-bolt text-2xl text-white"></i></div>
+                <h2 class="text-2xl font-bold" id="auth-title">LiteStream</h2>
+            </div>
+            <form onsubmit="handleAuth(event)" class="space-y-4">
+                <input type="text" id="login-user" required class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 ring-indigo-500/50" placeholder="Username">
+                <input type="password" id="login-pass" required class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 ring-indigo-500/50" placeholder="Password">
+                <button type="submit" id="auth-btn" class="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white shadow-xl hover:bg-indigo-500 uppercase">Masuk Dashboard</button>
+                <p class="text-center text-xs text-slate-500 mt-4">
+                    <span id="toggle-text">Belum punya akun?</span> 
+                    <button type="button" onclick="toggleAuthMode()" id="toggle-btn" class="text-indigo-400 font-bold hover:underline">Daftar Sekarang</button>
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- CUSTOM CONFIRM MODAL -->
+    <div id="custom-confirm-modal" class="hidden fixed inset-0 z-[110] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative transform transition-all scale-100">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-exclamation-triangle text-2xl text-rose-500"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white mb-2">Konfirmasi Tindakan</h3>
+                <p id="confirm-message" class="text-sm text-slate-400">Apakah Anda yakin?</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closeConfirmModal()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold text-sm transition-colors">Batal</button>
+                <button id="btn-confirm-action" class="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-sm transition-colors shadow-lg shadow-rose-600/20">Ya, Hapus</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[120] flex flex-col gap-2 w-full max-w-xs pointer-events-none"></div>
+
+    <div id="main-app" class="view-section flex flex-col md:flex-row min-h-screen">
+        <aside class="hidden md:flex w-72 bg-slate-900 border-r border-slate-800 flex-col p-8 sticky top-0 h-screen">
+            <div class="flex items-center gap-3 mb-12">
+                <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center"><i class="fas fa-bolt text-white"></i></div>
+                <h1 class="font-bold text-xl tracking-tight">LiteStream</h1>
+            </div>
+            <nav class="space-y-2 flex-1">
+                <button onclick="switchTab('overview')" id="nav-overview" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium active"><i class="fas fa-home"></i> Overview</button>
+                <button onclick="switchTab('library')" id="nav-library" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-folder"></i> Media Library</button>
+                <button onclick="switchTab('users')" id="nav-users" class="nav-link hidden w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-users-cog"></i> Admin Panel</button>
+                <button onclick="switchTab('settings')" id="nav-settings" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-sliders"></i> Settings</button>
+                <button onclick="switchTab('profile')" id="nav-profile" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-user-circle"></i> My Profile</button>
+            </nav>
+            <div class="pt-6 border-t border-slate-800 mt-6">
+                <button onclick="handleLogout()" class="w-full flex items-center gap-4 px-5 py-4 text-rose-400 font-bold hover:bg-rose-500/10 rounded-2xl transition-all"><i class="fas fa-sign-out-alt"></i> Logout</button>
+            </div>
+        </aside>
+
+        <main class="flex-1 p-4 md:p-10 max-w-6xl mx-auto w-full">
+            <header class="flex justify-between items-center mb-6">
+                <div><h2 class="text-xl font-bold md:hidden">LiteStream</h2><p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest hidden md:block">Streaming Dashboard</p></div>
+                <div class="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-2">
+                    <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="status-label" class="text-[10px] font-bold text-slate-400 uppercase">Offline</span>
+                </div>
+            </header>
+
+            <div class="bg-slate-800 border border-slate-700/50 rounded-3xl p-6 mb-6 shadow-xl overflow-hidden">
+                <div class="flex flex-col md:flex-row gap-8 items-center">
+                    <div class="text-center md:text-left min-w-[150px]">
+                        <p class="text-[10px] font-extrabold text-indigo-400 uppercase tracking-widest mb-1">Active Plan</p>
+                        <h3 id="plan-name-display" class="text-xl font-bold text-white truncate">...</h3>
+                    </div>
+                    <div class="flex-1 w-full space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="space-y-1.5">
+                                <div class="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                    <span>Storage</span><span id="storage-text">0 / 0 MB</span>
+                                </div>
+                                <div class="h-2 bg-slate-950 rounded-full overflow-hidden">
+                                    <div id="storage-bar" class="h-full bg-indigo-500 transition-all duration-700" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div class="space-y-1.5">
+                                <div class="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                    <span>Time Used</span><span id="usage-text">0 / 0 H</span>
+                                </div>
+                                <div class="h-2 bg-slate-950 rounded-full overflow-hidden">
+                                    <div id="usage-bar" class="h-full bg-emerald-500 transition-all duration-700" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-overview" class="tab-content active space-y-6">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-1">
+                        <div class="bg-slate-800/50 border border-slate-700/50 p-6 rounded-3xl h-full">
+                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-5">Broadcast Control</h4>
+                            <div id="live-card" class="hidden bg-emerald-500/10 border border-emerald-500/20 p-5 rounded-2xl mb-5 pulse-live text-center">
+                                <div class="mb-4"><span class="text-emerald-400 font-bold text-[10px] tracking-widest">LIVE TRANSMISSION</span></div>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="bg-slate-900/50 rounded-xl p-3 border border-emerald-500/10 flex flex-col items-center justify-center">
+                                        <p class="text-[8px] text-emerald-500/70 font-bold uppercase mb-1"><i class="fas fa-clock mr-1"></i> DURATION</p>
+                                        <p id="stat-duration" class="text-sm font-mono font-bold text-white">00:00:00</p>
+                                    </div>
+                                    <div class="bg-slate-900/50 rounded-xl p-3 border border-emerald-500/10 flex flex-col items-center justify-center">
+                                        <p class="text-[8px] text-emerald-500/70 font-bold uppercase mb-1"><i class="fas fa-tachometer-alt mr-1"></i> BITRATE</p>
+                                        <p id="stat-bitrate" class="text-sm font-mono font-bold text-white">0 kbps</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="idle-msg" class="text-sm text-slate-400 mb-5 italic text-center py-4">Server Stand-by.</div>
+                            <button onclick="stopStream()" id="btn-stop-stream" class="hidden w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-bold text-sm transition-all">STOP STREAMING</button>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2 bg-slate-950 rounded-3xl border border-slate-800 h-[400px] overflow-hidden flex flex-col">
+                        <div class="p-3 border-b border-slate-800 bg-slate-900/50 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Logs Console</div>
+                        <div id="logConsole" class="flex-1 p-5 font-mono text-[10px] overflow-y-auto space-y-1"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-library" class="tab-content space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <h2 class="text-2xl font-bold">Media Library</h2>
+                    <div class="flex gap-2">
+                        <button id="btn-start-playlist" onclick="startPlaylist()" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-2xl font-bold text-sm">START (<span id="selected-count">0</span>)</button>
+                        <button onclick="document.getElementById('file-up').click()" class="bg-indigo-600 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-indigo-500 transition-all">Upload Media</button>
+                    </div>
+                    <input type="file" id="file-up" class="hidden" onchange="handleUpload(this)">
+                </div>
+
+                <div class="relative">
+                    <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500"></i>
+                    <input type="text" id="media-search" oninput="renderMediaList()" placeholder="Search filenames..." class="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl pl-12 pr-5 py-3 text-sm text-white outline-none focus:border-indigo-500 transition-all">
+                </div>
+
+                <div class="flex p-1 bg-slate-900 rounded-2xl border border-slate-800 w-fit">
+                    <button onclick="switchMediaTab('video')" id="mt-video" class="media-subtab active px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Videos</button>
+                    <button onclick="switchMediaTab('audio')" id="mt-audio" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Audios</button>
+                    <button onclick="switchMediaTab('image')" id="mt-image" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Images</button>
+                </div>
+
+                <div id="media-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+            </div>
+
+            <div id="tab-settings" class="tab-content space-y-6">
+                <h2 class="text-2xl font-bold">Settings</h2>
+                <div class="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50 max-w-2xl">
+                    <form onsubmit="saveSettings(event)" class="space-y-6">
+                        <div class="border-b border-slate-700 pb-6 mb-6">
+                             <h3 class="text-lg font-bold text-white mb-4">Streaming Configuration</h3>
+                            <div class="mb-4">
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Streaming Platform</label>
+                                <div class="relative">
+                                    <select id="setting-platform" onchange="handlePlatformChange()" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white appearance-none outline-none focus:ring-2 ring-indigo-500/50 font-bold cursor-pointer">
+                                        <option value="youtube">YouTube Live</option>
+                                        <option value="facebook">Facebook Live</option>
+                                        <option value="twitch">Twitch</option>
+                                        <option value="custom">Custom RTMP</option>
+                                    </select>
+                                    <div class="absolute inset-y-0 right-5 flex items-center pointer-events-none text-slate-400"><i class="fas fa-chevron-down"></i></div>
+                                </div>
+                            </div>
+                            <div id="server-url-container" class="hidden mb-4">
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">RTMP Server URL</label>
+                                <input type="text" id="setting-server-url" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 ring-indigo-500/50" placeholder="e.g. rtmp://server/live/">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Stream Key</label>
+                                <div class="relative">
+                                    <input type="password" id="setting-key" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 ring-indigo-500/50">
+                                    <button type="button" onclick="toggleKeyVisibility()" class="absolute inset-y-0 right-5 text-slate-400 hover:text-white"><i id="eye-icon" class="fas fa-eye"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                        <input type="hidden" id="setting-full-rtmp">
+                        <button type="submit" class="bg-indigo-600 w-full py-4 rounded-2xl font-bold hover:bg-indigo-500 shadow-lg">Save Configuration</button>
+                    </form>
+                </div>
+            </div>
+            
+            <div id="tab-profile" class="tab-content space-y-6">
+                <h2 class="text-2xl font-bold">My Profile</h2>
+                <div class="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50 max-w-sm">
+                    <form onsubmit="saveProfile(event)" class="space-y-4">
+                        <input type="text" id="profile-username" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-3 text-white outline-none">
+                        <input type="password" id="profile-current-pass" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-3 text-white outline-none" placeholder="Password Saat Ini">
+                        <input type="password" id="profile-new-pass" class="w-full bg-slate-900 border border-slate-700 rounded-2xl px-5 py-3 text-white outline-none" placeholder="Password Baru (Opsional)">
+                        <button type="submit" class="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white hover:bg-indigo-500">Update Profile</button>
+                    </form>
+                </div>
+            </div>
+
+            <div id="tab-users" class="tab-content space-y-6">
+                <h2 class="text-2xl font-bold">Admin Panel</h2>
+                <div class="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-800 text-[10px] uppercase font-bold text-slate-500">
+                            <tr><th class="p-5">User</th><th class="p-5">Usage</th><th class="p-5 text-right">Actions</th></tr>
+                        </thead>
+                        <tbody id="user-table-body" class="text-sm"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentUser = null;
+        let selectedMedia = new Set();
+        let allMedia = [];
+        let isLoginMode = true;
+        let confirmCallback = null;
+        const PLATFORMS = { youtube: 'rtmp://a.rtmp.youtube.com/live2/', facebook: 'rtmps://live-api-s.facebook.com:443/rtmp/', twitch: 'rtmp://live.twitch.tv/app/' };
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = `toast-enter ${type === 'success' ? 'bg-emerald-600' : 'bg-rose-600'} text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-bold backdrop-blur-md`;
+            el.innerHTML = `<i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> <span>${message}</span>`;
+            container.appendChild(el);
+            requestAnimationFrame(() => { el.classList.add('toast-enter-active'); el.classList.remove('toast-enter'); });
+            setTimeout(() => { el.classList.add('toast-exit-active'); el.addEventListener('transitionend', () => el.remove()); }, 3000);
+        }
+
+        function openConfirmModal(message, callback) {
+            document.getElementById('confirm-message').textContent = message;
+            document.getElementById('custom-confirm-modal').classList.remove('hidden');
+            confirmCallback = callback;
+        }
+
+        function closeConfirmModal() { document.getElementById('custom-confirm-modal').classList.add('hidden'); }
+        document.getElementById('btn-confirm-action').onclick = () => { confirmCallback?.(); closeConfirmModal(); };
+
+        async function checkAuth() {
+            try {
+                const res = await fetch('/api/check-auth');
+                const data = await res.json();
+                if (data.authenticated) { currentUser = data.user; showDashboard(); } 
+                else { setView('landing-view'); fetchPublicPlans(); }
+            } catch (e) { setView('landing-view'); }
+        }
+
+        function setView(id) { document.querySelectorAll('.view-section').forEach(v => v.classList.toggle('active-view', v.id === id)); }
+
+        async function showDashboard() {
+            setView('main-app');
+            document.getElementById('login-view').classList.add('hidden');
+            updateUIInfo();
+            if (currentUser.role === 'admin') document.getElementById('nav-users').classList.remove('hidden');
+            fetchMedia(); fetchSettings();
+            
+            const res = await fetch('/api/stream/status');
+            const state = await res.json();
+            if (state.active) updateStreamUI(true);
+        }
+
+        function updateUIInfo() {
+            if(!currentUser) return;
+            document.getElementById('plan-name-display').textContent = currentUser.plan_name;
+            const usedMB = (currentUser.storage_used / (1024 * 1024)).toFixed(1);
+            document.getElementById('storage-text').textContent = `${usedMB} / ${currentUser.max_storage_mb} MB`;
+            document.getElementById('storage-bar').style.width = Math.min((usedMB / currentUser.max_storage_mb * 100), 100) + '%';
+            
+            const usedHrs = ( (currentUser.usage_seconds || 0) / 3600).toFixed(1);
+            const limitHrs = currentUser.daily_limit_hours || 24;
+            document.getElementById('usage-text').textContent = `${usedHrs} / ${limitHrs} H`;
+            document.getElementById('usage-bar').style.width = Math.min((usedHrs / limitHrs * 100), 100) + '%';
+        }
+
+        async function fetchPublicPlans() {
+            const res = await fetch('/api/plans-public');
+            const plans = await res.json();
+            document.getElementById('pricing-grid').innerHTML = plans.map(p => {
+                let extraControls = '';
+                
+                // LOGIKA KHUSUS: Paket Radio (ID 3)
+                if (p.id === 3) {
+                     let options = '';
+                     for(let i=1; i<=12; i++) options += `<option value="${i}">${i} Bulan</option>`;
+                     extraControls = `
+                        <div class="mt-4 mb-2 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
+                            <label class="text-[10px] uppercase font-bold text-slate-500 block mb-1">Durasi Langganan</label>
+                            <select onchange="updatePlanPrice(this, '${p.price_text}', ${p.id})" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 font-bold">
+                                ${options}
+                            </select>
+                        </div>
+                     `;
+                }
+
+                // Tampilkan fitur tambahan jika ada
+                const featuresList = p.features_text 
+                    ? p.features_text.split(',').map(f => `<li><i class="fas fa-check text-indigo-400 mr-2"></i> ${f.trim()}</li>`).join('')
+                    : '';
+
+                return `
+                <div class="glass p-8 rounded-[3rem] border border-slate-800 flex flex-col ${p.id === 4 ? 'ring-2 ring-indigo-500' : ''} relative overflow-hidden group hover:border-indigo-500/30 transition-all">
+                    <h4 class="text-lg font-bold">${p.name}</h4>
+                    <div id="price-display-${p.id}" class="text-2xl font-black text-indigo-400 my-4 transition-opacity duration-300">${p.price_text}</div>
+                    ${extraControls}
+                    <ul class="text-xs text-slate-400 space-y-2 flex-1 mb-6">
+                        <li><i class="fas fa-check text-indigo-400 mr-2"></i> ${p.daily_limit_hours} Jam/hari</li>
+                        <li><i class="fas fa-check text-indigo-400 mr-2"></i> ${p.max_storage_mb}MB Storage</li>
+                         ${featuresList}
+                    </ul>
+                    <button onclick="showAuth('register')" class="w-full py-3 bg-indigo-600 rounded-xl font-bold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/20">Pilih Paket</button>
+                </div>`;
+            }).join('');
+        }
+
+        function updatePlanPrice(select, basePriceStr, planId) {
+            // Hapus karakter non-digit untuk dapat angka murni (Rp 75.000 -> 75000)
+            const basePrice = parseInt(basePriceStr.replace(/[^0-9]/g, ''));
+            const months = parseInt(select.value);
+            if(isNaN(basePrice)) return;
+
+            const total = basePrice * months;
+            const formatted = 'Rp ' + total.toLocaleString('id-ID'); // Format mata uang Indonesia
+
+            const el = document.getElementById(`price-display-${planId}`);
+            
+            // Animasi kecil saat harga berubah
+            if (el) {
+                el.style.opacity = '0';
+                setTimeout(() => {
+                    el.textContent = formatted;
+                    el.style.opacity = '1';
+                }, 150);
+            }
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.toggle('active', t.id === 'tab-' + tab));
+            document.querySelectorAll('.nav-link').forEach(l => l.classList.toggle('active', l.id === 'nav-' + tab));
+            if (tab === 'users') fetchUsers();
+        }
+
+        async function fetchMedia() {
+            const res = await fetch('/api/videos');
+            allMedia = await res.json();
+            renderMediaList();
+        }
+
+        function renderMediaList() {
+            const query = document.getElementById('media-search') ? document.getElementById('media-search').value.toLowerCase() : '';
+            const filtered = allMedia.filter(m => 
+                m.type === (window.currentMediaTab || 'video') && 
+                m.filename.toLowerCase().includes(query)
+            );
+            document.getElementById('media-list').innerHTML = filtered.map(v => `
+                <div class="bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50 flex items-center gap-4 group">
+                    <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500">
+                    <div class="flex-1 truncate text-xs font-bold text-slate-300">${v.filename}</div>
+                    <button onclick="deleteMedia(${v.id})" class="text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-trash"></i></button>
+                </div>`).join('');
+        }
+
+        function switchMediaTab(tab) { 
+            window.currentMediaTab = tab; 
+            document.querySelectorAll('.media-subtab').forEach(t => t.classList.toggle('active', t.id === 'mt-' + tab));
+            renderMediaList(); 
+        }
+
+        function toggleSelect(id) {
+            if (selectedMedia.has(id)) selectedMedia.delete(id); else selectedMedia.add(id);
+            document.getElementById('selected-count').textContent = selectedMedia.size;
+            document.getElementById('btn-start-playlist').classList.toggle('hidden', selectedMedia.size === 0);
+        }
+
+        async function startPlaylist() {
+            const rtmpUrl = document.getElementById('setting-full-rtmp').value;
+            const res = await fetch('/api/playlist/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ids: Array.from(selectedMedia), rtmpUrl, loop: true }) });
+            const d = await res.json();
+            if (d.error) showToast(d.error, 'error'); else showToast(d.message);
+        }
+
+        async function fetchSettings() {
+            const res = await fetch('/api/settings');
+            const d = await res.json();
+            document.getElementById('setting-platform').value = d.stream_platform || 'youtube';
+            document.getElementById('setting-key').value = d.stream_key || '';
+            document.getElementById('setting-full-rtmp').value = d.rtmp_url || '';
+        }
+
+        async function fetchUsers() {
+            const res = await fetch('/api/users');
+            const users = await res.json();
+            document.getElementById('user-table-body').innerHTML = users.map(u => `
+                <tr class="border-b border-slate-800">
+                    <td class="p-5 font-bold">${u.username}</td>
+                    <td class="p-5 text-xs">${(u.usage_seconds/3600).toFixed(1)} Jam used</td>
+                    <td class="p-5 text-right"><button onclick="alert('Admin Panel Simple Mode')" class="bg-indigo-600 px-3 py-1 rounded text-[10px] font-bold">MANAGE</button></td>
+                </tr>`).join('');
+        }
+
+        function updateStreamUI(isLive) {
+            document.getElementById('live-card').classList.toggle('hidden', !isLive);
+            document.getElementById('idle-msg').classList.toggle('hidden', isLive);
+            document.getElementById('btn-stop-stream').classList.toggle('hidden', !isLive);
+            document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500' : 'bg-slate-500'}`;
+            document.getElementById('status-label').textContent = isLive ? 'Live' : 'Offline';
+        }
+
+        socket.on('stats', (data) => {
+            document.getElementById('stat-duration').textContent = data.duration.split('.')[0]; 
+            document.getElementById('stat-bitrate').textContent = data.bitrate;
+            
+            // Sync Usage Bar dynamically
+            if (data.usage_remaining !== undefined && currentUser) {
+                const limitHrs = currentUser.daily_limit_hours || 24;
+                const limitSecs = limitHrs * 3600;
+                const usedSecs = limitSecs - data.usage_remaining;
+                currentUser.usage_seconds = usedSecs; // Update local state
+                
+                const usedHrs = (usedSecs / 3600).toFixed(1);
+                document.getElementById('usage-text').textContent = `${usedHrs} / ${limitHrs} H`;
+                document.getElementById('usage-bar').style.width = Math.min((usedHrs / limitHrs * 100), 100) + '%';
+            }
+        });
+
+        socket.on('log', (data) => {
+            const p = document.createElement('p');
+            p.className = data.type === 'error' ? 'text-rose-400' : 'text-slate-400';
+            p.textContent = `> ${data.message}`;
+            const consoleEl = document.getElementById('logConsole');
+            consoleEl.appendChild(p);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            
+            if (data.type === 'start') updateStreamUI(true);
+            if (data.type === 'end' || data.type === 'info') updateStreamUI(false);
+        });
+
+        async function handleLogout() { await fetch('/api/logout', {method:'POST'}); location.reload(); }
+        function showAuth(m) { isLoginMode = m==='login'; document.getElementById('login-view').classList.remove('hidden'); }
+        function hideAuth() { document.getElementById('login-view').classList.add('hidden'); }
+        window.onload = checkAuth;
+    </script>
+</body>
+</html>

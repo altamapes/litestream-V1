@@ -1,0 +1,11 @@
+
+node_modules/
+backend/node_modules/
+backend/database.sqlite
+backend/sessions.sqlite
+.env
+.DS_Store
+
+# Abaikan isi folder upload tapi simpan foldernya
+backend/uploads/*
+!backend/uploads/.gitkeep

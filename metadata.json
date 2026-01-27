@@ -1,0 +1,8 @@
+{
+  "name": "litestream V1",
+  "description": "A lightweight dashboard for managing multi-platform RTMP streaming from a low-resource VPS using FFmpeg and SQLite.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
