@@ -62,6 +62,10 @@
         .toggle-checkbox:checked + .toggle-label {
             background-color: #6366f1;
         }
+        
+        /* Table enhancements */
+        .stream-row { transition: background-color 0.2s; }
+        .stream-row:hover { background-color: rgba(30, 41, 59, 0.5); }
     </style>
 </head>
 <body class="min-h-screen">
@@ -355,7 +359,7 @@
                     </div>
                 </div>
 
-                <!-- 3. Streaming Status Table -->
+                <!-- 3. Streaming Status Table (Updated for Multi-Stream) -->
                 <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden mt-4">
                     <!-- Table Header -->
                     <div class="grid grid-cols-12 gap-4 p-4 bg-slate-800/50 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -372,42 +376,12 @@
                             <i class="fas fa-satellite-dish text-2xl opacity-50"></i>
                         </div>
                         <p class="text-sm font-medium">No active streams.</p>
-                        <!-- Updated Text -->
                         <p class="text-xs opacity-50 mt-1">Click "New Stream" to start broadcasting.</p>
                     </div>
 
-                    <!-- Active Row (Dynamically populated) -->
-                    <div id="stream-active-row" class="hidden grid grid-cols-12 gap-4 p-4 items-center border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                        <div class="col-span-5 md:col-span-4 pl-2 flex items-center gap-3">
-                            <div class="w-10 h-10 bg-indigo-500/10 rounded-lg flex items-center justify-center border border-indigo-500/20">
-                                <i class="fas fa-play text-indigo-400 text-xs"></i>
-                            </div>
-                            <div class="overflow-hidden">
-                                <h4 class="text-sm font-bold text-white truncate">Live Broadcast</h4>
-                                <p class="text-xs text-slate-500 truncate" id="row-stream-id">ID: #Active</p>
-                            </div>
-                        </div>
-                        <div class="hidden md:block col-span-2">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300">
-                                <i class="fab fa-youtube text-red-500"></i> RTMP
-                            </span>
-                        </div>
-                        <div class="hidden md:block col-span-3">
-                            <div class="flex flex-col gap-1">
-                                <span class="text-xs font-mono text-slate-300"><i class="fas fa-clock text-slate-600 mr-1"></i> <span id="row-duration">00:00:00</span></span>
-                                <span class="text-[10px] font-mono text-slate-500"><i class="fas fa-signal text-slate-600 mr-1"></i> <span id="row-bitrate">0 kbps</span></span>
-                            </div>
-                        </div>
-                        <div class="col-span-4 md:col-span-2">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 pulse-live">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> LIVE
-                            </span>
-                        </div>
-                        <div class="col-span-3 md:col-span-1 text-right pr-2">
-                            <button onclick="stopStream()" class="text-slate-400 hover:text-rose-500 transition-colors p-2 rounded-lg hover:bg-rose-500/10" title="Stop Stream">
-                                <i class="fas fa-stop-circle text-lg"></i>
-                            </button>
-                        </div>
+                    <!-- Active Rows Container (Dynamically populated) -->
+                    <div id="streams-container" class="hidden">
+                        <!-- Rows injected via JS -->
                     </div>
                 </div>
 
@@ -421,6 +395,7 @@
                 </div>
             </div>
 
+            <!-- Other Tabs Remain Same (Library, Settings, Profile, Users) -->
             <div id="tab-library" class="tab-content space-y-6">
                 <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h2 class="text-2xl font-bold">Media Library</h2>
@@ -508,7 +483,8 @@
         let allMedia = [];
         let isLoginMode = true;
         let confirmCallback = null;
-        let isStreamActive = false;
+        let isStreamActive = false; // Kept for legacy check, but logic updated for array
+        let activeStreamsList = []; 
         
         let modalSelectedMedia = new Set();
         let currentModalMediaTab = 'video';
@@ -542,7 +518,6 @@
             modalWrapper.classList.remove('hidden');
             modalWrapper.classList.add('flex');
             
-            // Trigger animation
             requestAnimationFrame(() => {
                 modalCard.classList.add('active');
             });
@@ -663,6 +638,10 @@
                 else { 
                     showToast(d.message); 
                     closeNewStreamModal();
+                    // Just refresh status, let socket handle the rest
+                    const statusRes = await fetch('/api/stream/status');
+                    const state = await statusRes.json();
+                    updateStreamUI(state);
                     switchTab('overview');
                 }
             } catch (e) { showToast('Error starting stream', 'error'); }
@@ -692,7 +671,7 @@
             
             const res = await fetch('/api/stream/status');
             const state = await res.json();
-            updateStreamUI(state.active);
+            updateStreamUI(state);
             startMockStats();
         }
 
@@ -834,25 +813,80 @@
                 </tr>`).join('');
         }
 
-        function updateStreamUI(active) {
-            isStreamActive = active;
-            document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-500'}`;
-            document.getElementById('status-label').textContent = active ? 'Live' : 'Offline';
-            document.getElementById('dash-active-count').textContent = active ? '1' : '0';
-            document.getElementById('dash-active-bar').style.width = active ? '100%' : '0%';
-            document.getElementById('stream-empty-state').classList.toggle('hidden', active);
-            document.getElementById('stream-active-row').classList.toggle('hidden', !active);
-            document.getElementById('stream-active-row').classList.toggle('grid', active);
-            document.getElementById('showing-text').textContent = active ? 'Showing 1 active stream' : 'Showing 0 active streams';
+        function updateStreamUI(state) {
+            isStreamActive = state.active;
+            activeStreamsList = state.streams || [];
+
+            document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${isStreamActive ? 'bg-emerald-500' : 'bg-slate-500'}`;
+            document.getElementById('status-label').textContent = isStreamActive ? 'Live' : 'Offline';
+            document.getElementById('dash-active-count').textContent = activeStreamsList.length;
+            document.getElementById('dash-active-bar').style.width = isStreamActive ? '100%' : '0%';
+
+            // Render Rows
+            const container = document.getElementById('streams-container');
+            const emptyState = document.getElementById('stream-empty-state');
+            
+            if (activeStreamsList.length === 0) {
+                container.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+                document.getElementById('showing-text').textContent = 'Showing 0 active streams';
+            } else {
+                emptyState.classList.add('hidden');
+                container.classList.remove('hidden');
+                
+                container.innerHTML = activeStreamsList.map(s => `
+                    <div id="stream-row-${s.id}" class="grid grid-cols-12 gap-4 p-4 items-center border-b border-slate-800/50 stream-row">
+                        <div class="col-span-5 md:col-span-4 pl-2 flex items-center gap-3">
+                            <div class="w-10 h-10 bg-indigo-500/10 rounded-lg flex items-center justify-center border border-indigo-500/20">
+                                <i class="fas fa-play text-indigo-400 text-xs"></i>
+                            </div>
+                            <div class="overflow-hidden">
+                                <h4 class="text-sm font-bold text-white truncate">${s.name || 'Live Stream'}</h4>
+                                <p class="text-xs text-slate-500 truncate font-mono">ID: #${s.id.substr(0,4)}</p>
+                            </div>
+                        </div>
+                        <div class="hidden md:block col-span-2">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300">
+                                <i class="fab fa-${s.platform.toLowerCase() === 'custom' ? 'server' : s.platform.toLowerCase()} ${s.platform.toLowerCase() === 'youtube' ? 'text-red-500' : (s.platform.toLowerCase() === 'facebook' ? 'text-blue-500' : 'text-slate-400')}"></i> ${s.platform}
+                            </span>
+                        </div>
+                        <div class="hidden md:block col-span-3">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-xs font-mono text-slate-300"><i class="fas fa-clock text-slate-600 mr-1"></i> <span id="dur-${s.id}">00:00:00</span></span>
+                                <span class="text-[10px] font-mono text-slate-500"><i class="fas fa-signal text-slate-600 mr-1"></i> <span id="bit-${s.id}">0 kbps</span></span>
+                            </div>
+                        </div>
+                        <div class="col-span-4 md:col-span-2">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 pulse-live">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> LIVE
+                            </span>
+                        </div>
+                        <div class="col-span-3 md:col-span-1 text-right pr-2">
+                            <button onclick="stopStream('${s.id}')" class="text-slate-400 hover:text-rose-500 transition-colors p-2 rounded-lg hover:bg-rose-500/10" title="Stop Stream">
+                                <i class="fas fa-stop-circle text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+                
+                document.getElementById('showing-text').textContent = `Showing ${activeStreamsList.length} active streams`;
+            }
         }
 
         socket.on('stats', (data) => {
-            // Force active UI if stats received but UI thinks inactive
-            if (!isStreamActive) updateStreamUI(true);
-
-            document.getElementById('row-duration').textContent = data.duration.split('.')[0]; 
-            document.getElementById('row-bitrate').textContent = data.bitrate;
+            if (!isStreamActive) {
+                // If UI is out of sync, fetch full status
+                 fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
+                 return;
+            }
             
+            // Only update specific row text to avoid re-rendering DOM every second
+            const durEl = document.getElementById(`dur-${data.streamId}`);
+            const bitEl = document.getElementById(`bit-${data.streamId}`);
+            
+            if (durEl) durEl.textContent = data.duration.split('.')[0];
+            if (bitEl) bitEl.textContent = data.bitrate;
+
             if (data.usage_remaining !== undefined && currentUser) {
                 const limitHrs = currentUser.daily_limit_hours || 24;
                 const limitSecs = limitHrs * 3600;
@@ -860,17 +894,14 @@
                 currentUser.usage_seconds = usedSecs; 
             }
         });
+        
+        socket.on('stream_ended', (data) => {
+             // Refresh list when a stream ends to remove the row
+             fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
+        });
 
         socket.on('log', (data) => {
-            const p = document.createElement('p');
-            p.className = data.type === 'error' ? 'text-rose-400' : 'text-slate-400';
-            p.textContent = `> ${data.message}`;
-            const consoleEl = document.getElementById('logConsole');
-            consoleEl.appendChild(p);
-            consoleEl.scrollTop = consoleEl.scrollHeight;
-            
-            if (data.type === 'start') updateStreamUI(true);
-            if (data.type === 'end') updateStreamUI(false);
+            // Optional: Log console handling
         });
 
         async function handleLogout() { await fetch('/api/logout', {method:'POST'}); location.reload(); }
@@ -995,9 +1026,15 @@
             } catch (err) { showToast('Error updating profile', 'error'); }
         }
 
-        async function stopStream() {
+        async function stopStream(id) {
             try {
-                await fetch('/api/stream/stop', {method:'POST'});
+                // Pass optional ID. If null (legacy), backend handles gracefully, but new UI passes ID
+                const body = id ? JSON.stringify({ streamId: id }) : '{}';
+                await fetch('/api/stream/stop', {
+                    method:'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body
+                });
                 showToast('Stopping stream...', 'success');
             } catch (e) { showToast('Error stopping stream', 'error'); }
         }

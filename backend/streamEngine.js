@@ -5,43 +5,42 @@ const fs = require('fs');
 const { PassThrough } = require('stream');
 const { db } = require('./database');
 
-let currentCommand = null;
-let activeInputStream = null; 
-let currentStreamLoopActive = false; 
-let currentStreamUserId = null;
-let currentPlaylistPath = null;
+// Store active streams: key = streamId, value = { command, userId, playlistPath, activeInputStream, loop: boolean }
+const activeStreams = new Map();
 
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
-  if (currentCommand) {
-    stopStream();
-  }
-
+  const { userId, loop = false, coverImagePath } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
   const isAllAudio = files.every(f => f.toLowerCase().endsWith('.mp3'));
-  const shouldLoop = !!options.loop;
-  currentStreamUserId = options.userId;
   
-  currentStreamLoopActive = true;
-
+  // Generate Unique Stream ID
+  const streamId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  
   return new Promise((resolve, reject) => {
     let command = ffmpeg();
     let lastProcessedSecond = 0;
+    let currentPlaylistPath = null;
+    let activeInputStream = null;
 
+    // --- AUDIO HANDLING ---
     if (isAllAudio) {
       const mixedStream = new PassThrough();
       activeInputStream = mixedStream;
       let fileIndex = 0;
+      let isLoopingActive = true; // Local loop flag for this specific stream
 
       const playNextSong = () => {
-        if (!currentStreamLoopActive) return;
+        if (!activeStreams.has(streamId)) return; // Stop if stream removed
+        
         const currentFile = files[fileIndex];
         const songStream = fs.createReadStream(currentFile);
+        
         songStream.pipe(mixedStream, { end: false });
 
         songStream.on('end', () => {
            fileIndex++;
            if (fileIndex >= files.length) {
-             if (shouldLoop) {
+             if (loop) {
                fileIndex = 0; 
                playNextSong(); 
              } else {
@@ -51,9 +50,11 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
              playNextSong();
            }
         });
+        
         songStream.on('error', (err) => {
-           fileIndex++;
-           playNextSong();
+           console.error(`Error reading file ${currentFile}:`, err);
+           fileIndex++; // Skip bad file
+           if (fileIndex < files.length) playNextSong();
         });
       };
 
@@ -65,13 +66,14 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         'format=yuv420p'
       ].join(',');
 
-      let imageInput = options.coverImagePath;
-      if (!imageInput || !fs.existsSync(imageInput)) {
+      // Input 1: Image/Color
+      if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=24').inputOptions(['-f lavfi', '-re']);
       } else {
-        command.input(imageInput).inputOptions(['-loop 1', '-framerate 2', '-re']); 
+        command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 2', '-re']); 
       }
 
+      // Input 2: Audio Stream
       command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']); 
 
       command.outputOptions([
@@ -82,54 +84,67 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
-    } else {
-      // Use unique playlist name to prevent collisions
-      const uniqueId = Date.now() + '_' + Math.random().toString(36).substring(7);
+    } 
+    // --- VIDEO HANDLING ---
+    else {
+      const uniqueId = streamId;
       currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
       
       const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
       fs.writeFileSync(currentPlaylistPath, playlistContent);
 
       const videoInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
-      if (shouldLoop) videoInputOpts.unshift('-stream_loop', '-1');
+      if (loop) videoInputOpts.unshift('-stream_loop', '-1');
 
       command.input(currentPlaylistPath).inputOptions(videoInputOpts);
       command.outputOptions(['-c copy', '-f flv', '-flvflags no_duration_filesize']);
     }
 
-    currentCommand = command
+    // --- EVENTS ---
+    command
       .on('start', (commandLine) => {
-        if (global.io) global.io.emit('log', { type: 'start', message: `Stream Started.` });
+        // Save state immediately
+        activeStreams.set(streamId, { 
+            command, 
+            userId, 
+            playlistPath: currentPlaylistPath,
+            activeInputStream,
+            startTime: Date.now(),
+            platform: rtmpUrl.includes('youtube') ? 'YouTube' : (rtmpUrl.includes('facebook') ? 'Facebook' : (rtmpUrl.includes('twitch') ? 'Twitch' : 'Custom')),
+            name: `Stream ${streamId.substr(0,4)}` // Simple name or pass from options
+        });
+        
+        if (global.io) global.io.emit('log', { type: 'start', message: `Stream ${streamId} Started.`, streamId });
+        resolve(streamId); // Return ID to controller
       })
       .on('progress', (progress) => {
-        if (!currentStreamUserId) return;
-
-        // Hitung selisih detik sejak progress terakhir
+        // Usage calculation logic (Additive per stream)
         const currentTimemark = progress.timemark; 
         const parts = currentTimemark.split(':');
         const totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
         const diff = Math.floor(totalSeconds - lastProcessedSecond);
 
-        if (diff >= 5) { // Update DB setiap 5 detik penggunaan
+        if (diff >= 5) { 
             lastProcessedSecond = totalSeconds;
             
             db.get(`
                 SELECT u.usage_seconds, p.daily_limit_hours 
                 FROM users u JOIN plans p ON u.plan_id = p.id 
-                WHERE u.id = ?`, [currentStreamUserId], (err, row) => {
+                WHERE u.id = ?`, [userId], (err, row) => {
                 if (row) {
                     const newUsage = row.usage_seconds + diff;
                     const limitSeconds = row.daily_limit_hours * 3600;
 
-                    db.run("UPDATE users SET usage_seconds = ? WHERE id = ?", [newUsage, currentStreamUserId]);
+                    db.run("UPDATE users SET usage_seconds = ? WHERE id = ?", [newUsage, userId]);
 
                     if (newUsage >= limitSeconds) {
-                        if (global.io) global.io.emit('log', { type: 'error', message: 'Batas penggunaan harian tercapai! Stream dimatikan otomatis.' });
-                        stopStream();
+                        if (global.io) global.io.emit('log', { type: 'error', message: 'Quota exceeded for user.', streamId });
+                        stopStream(streamId);
                     }
 
                     if (global.io) {
                         global.io.emit('stats', { 
+                            streamId,
                             duration: progress.timemark, 
                             bitrate: progress.currentKbps ? Math.round(progress.currentKbps) + ' kbps' : 'N/A',
                             usage_remaining: Math.max(0, limitSeconds - newUsage)
@@ -140,48 +155,63 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         }
       })
       .on('error', (err) => {
-        if (err.message.includes('SIGKILL')) return;
-        currentCommand = null;
-        cleanupPlaylist();
-        reject(err);
+        if (!err.message.includes('SIGKILL')) {
+            console.error(`Stream ${streamId} Error:`, err.message);
+        }
+        cleanupStream(streamId);
+        // Do not reject if it was already resolved (started)
       })
       .on('end', () => {
-        currentCommand = null;
-        cleanupPlaylist();
-        resolve();
+        if (global.io) global.io.emit('log', { type: 'end', message: `Stream ${streamId} Ended.`, streamId });
+        cleanupStream(streamId);
       });
 
-    currentCommand.save(rtmpUrl);
+    command.save(rtmpUrl);
   });
 };
 
-const cleanupPlaylist = () => {
-  if (currentPlaylistPath && fs.existsSync(currentPlaylistPath)) {
-    try {
-      fs.unlinkSync(currentPlaylistPath);
-      currentPlaylistPath = null;
-    } catch (e) {
-      console.error("Failed to delete playlist file:", e);
-    }
+const cleanupStream = (streamId) => {
+  const stream = activeStreams.get(streamId);
+  if (!stream) return;
+
+  if (stream.playlistPath && fs.existsSync(stream.playlistPath)) {
+    try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
   }
+  
+  activeStreams.delete(streamId);
+  
+  // Notify frontend of removal
+  if (global.io) global.io.emit('stream_ended', { streamId });
 };
 
-const stopStream = () => {
-  currentStreamLoopActive = false;
-  currentStreamUserId = null;
-  if (activeInputStream) {
-      try { activeInputStream.end(); } catch(e) {}
-      activeInputStream = null;
-  }
-  if (currentCommand) {
-    try { currentCommand.kill('SIGKILL'); } catch (e) {}
-    currentCommand = null;
-    cleanupPlaylist();
+const stopStream = (streamId) => {
+  const stream = activeStreams.get(streamId);
+  if (stream) {
+    if (stream.activeInputStream) {
+        try { stream.activeInputStream.end(); } catch(e) {}
+    }
+    try { stream.command.kill('SIGKILL'); } catch (e) {}
+    cleanupStream(streamId);
     return true;
   }
   return false;
 };
 
-const isStreaming = () => !!currentCommand;
+const getActiveStreams = (userId) => {
+    const list = [];
+    activeStreams.forEach((v, k) => {
+        if (v.userId === userId) {
+            list.push({ 
+                id: k, 
+                platform: v.platform, 
+                startTime: v.startTime,
+                name: v.name
+            });
+        }
+    });
+    return list;
+};
 
-module.exports = { startStream, stopStream, isStreaming };
+const isStreaming = () => activeStreams.size > 0;
+
+module.exports = { startStream, stopStream, isStreaming, getActiveStreams };

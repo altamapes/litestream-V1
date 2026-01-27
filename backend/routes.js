@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs'); 
 const { getVideos, saveVideo, deleteVideo, db } = require('./database');
-const { startStream, stopStream, isStreaming } = require('./streamEngine');
+const { startStream, stopStream, isStreaming, getActiveStreams } = require('./streamEngine');
 
 // Helper: Reset harian jika tanggal berubah
 const syncUserUsage = (userId) => {
@@ -118,8 +118,14 @@ router.delete('/videos/:id', async (req, res) => {
 });
 
 router.get('/stream/status', async (req, res) => {
-    const usage = await syncUserUsage(req.session.user.id);
-    res.json({ active: isStreaming(), usage_seconds: usage });
+    const userId = req.session.user.id;
+    const usage = await syncUserUsage(userId);
+    const activeStreams = getActiveStreams(userId);
+    res.json({ 
+        active: activeStreams.length > 0, 
+        streams: activeStreams, 
+        usage_seconds: usage 
+    });
 });
 
 router.post('/playlist/start', async (req, res) => {
@@ -130,15 +136,21 @@ router.post('/playlist/start', async (req, res) => {
   if (!rtmpUrl) return res.status(400).json({ error: "RTMP URL Kosong." });
 
   const currentUsage = await syncUserUsage(userId);
+  const activeStreams = getActiveStreams(userId);
 
   db.get(`
-    SELECT p.allowed_types, p.daily_limit_hours 
+    SELECT p.allowed_types, p.daily_limit_hours, p.max_active_streams
     FROM users u JOIN plans p ON u.plan_id = p.id 
     WHERE u.id = ?`, [userId], (err, plan) => {
     
     // Cek Batasan Waktu
     if (currentUsage >= plan.daily_limit_hours * 3600) {
         return res.status(403).json({ error: `Batas waktu harian (${plan.daily_limit_hours} jam) sudah habis.` });
+    }
+
+    // Cek Limit Max Active Streams
+    if (activeStreams.length >= plan.max_active_streams) {
+        return res.status(403).json({ error: `Maksimal ${plan.max_active_streams} stream berjalan sekaligus untuk paket ini.` });
     }
 
     const placeholders = ids.map(() => '?').join(',');
@@ -166,15 +178,19 @@ router.post('/playlist/start', async (req, res) => {
       } 
 
       try {
-          startStream(playlistPaths, rtmpUrl, { userId, loop: !!loop, coverImagePath: finalCoverPath });
-          res.json({ success: true, message: `Streaming dimulai.` });
+          // startStream kini return Promise<streamId>
+          const streamId = await startStream(playlistPaths, rtmpUrl, { userId, loop: !!loop, coverImagePath: finalCoverPath });
+          res.json({ success: true, message: `Streaming dimulai.`, streamId });
       } catch (e) { res.status(500).json({ error: "Engine Error: " + e.message }); }
     });
   });
 });
 
 router.post('/stream/stop', (req, res) => {
-  const success = stopStream();
+  const { streamId } = req.body;
+  if (!streamId) return res.status(400).json({error: "Stream ID diperlukan"});
+  
+  const success = stopStream(streamId);
   res.json({ success });
 });
 
