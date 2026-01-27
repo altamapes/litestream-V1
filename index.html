@@ -22,7 +22,13 @@
             margin: 0; padding: 0;
         }
 
-        .nav-link.active { color: white; background: rgba(99, 102, 241, 0.2); border-radius: 12px; }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+        .nav-link.active { color: white; background: rgba(99, 102, 241, 0.1); border-left: 3px solid #6366f1; border-radius: 0 12px 12px 0; }
         .nav-link.active i { color: #818cf8; }
 
         .tab-content { display: none; opacity: 0; transform: translateY(10px); transition: all 0.3s ease; }
@@ -37,8 +43,8 @@
         .view-section.active-view { display: block !important; }
         #main-app.active-view { display: flex !important; }
         
-        .pulse-live { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); animation: pulse 2s infinite; }
-        @keyframes pulse { 70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+        .pulse-live { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
         .toast-enter { transform: translateY(20px); opacity: 0; }
         .toast-enter-active { transform: translateY(0); opacity: 1; transition: all 0.3s ease-out; }
@@ -120,86 +126,193 @@
     <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[120] flex flex-col gap-2 w-full max-w-xs pointer-events-none"></div>
 
     <div id="main-app" class="view-section flex flex-col md:flex-row min-h-screen">
-        <aside class="hidden md:flex w-72 bg-slate-900 border-r border-slate-800 flex-col p-8 sticky top-0 h-screen">
-            <div class="flex items-center gap-3 mb-12">
-                <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center"><i class="fas fa-bolt text-white"></i></div>
-                <h1 class="font-bold text-xl tracking-tight">LiteStream</h1>
+        <aside class="hidden md:flex w-64 bg-slate-900 border-r border-slate-800 flex-col py-8 sticky top-0 h-screen">
+            <div class="flex items-center gap-3 px-8 mb-12">
+                <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><i class="fas fa-bolt text-white text-sm"></i></div>
+                <h1 class="font-bold text-lg tracking-tight">LiteStream</h1>
             </div>
-            <nav class="space-y-2 flex-1">
-                <button onclick="switchTab('overview')" id="nav-overview" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium active"><i class="fas fa-home"></i> Overview</button>
-                <button onclick="switchTab('library')" id="nav-library" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-folder"></i> Media Library</button>
-                <button onclick="switchTab('users')" id="nav-users" class="nav-link hidden w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-users-cog"></i> Admin Panel</button>
-                <button onclick="switchTab('settings')" id="nav-settings" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-sliders"></i> Settings</button>
-                <button onclick="switchTab('profile')" id="nav-profile" class="nav-link w-full flex items-center gap-4 px-5 py-4 text-slate-400 transition-all font-medium"><i class="fas fa-user-circle"></i> My Profile</button>
+            <nav class="space-y-1 flex-1 pr-4">
+                <button onclick="switchTab('overview')" id="nav-overview" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white active"><i class="fas fa-chart-pie w-5"></i> Overview</button>
+                <button onclick="switchTab('library')" id="nav-library" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-folder w-5"></i> Media Library</button>
+                <button onclick="switchTab('users')" id="nav-users" class="nav-link hidden w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-users-cog w-5"></i> Admin Panel</button>
+                <button onclick="switchTab('settings')" id="nav-settings" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-sliders w-5"></i> Settings</button>
+                <button onclick="switchTab('profile')" id="nav-profile" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-user-circle w-5"></i> My Profile</button>
             </nav>
-            <div class="pt-6 border-t border-slate-800 mt-6">
-                <button onclick="handleLogout()" class="w-full flex items-center gap-4 px-5 py-4 text-rose-400 font-bold hover:bg-rose-500/10 rounded-2xl transition-all"><i class="fas fa-sign-out-alt"></i> Logout</button>
+            <div class="px-8 pt-6 border-t border-slate-800 mt-6">
+                <button onclick="handleLogout()" class="w-full flex items-center gap-4 text-rose-400 font-bold hover:text-rose-300 transition-all text-sm"><i class="fas fa-sign-out-alt w-5"></i> Logout</button>
             </div>
         </aside>
 
-        <main class="flex-1 p-4 md:p-10 max-w-6xl mx-auto w-full">
-            <header class="flex justify-between items-center mb-6">
+        <main class="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
+            <header class="flex justify-between items-center mb-8">
                 <div><h2 class="text-xl font-bold md:hidden">LiteStream</h2><p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest hidden md:block">Streaming Dashboard</p></div>
-                <div class="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-2">
-                    <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="status-label" class="text-[10px] font-bold text-slate-400 uppercase">Offline</span>
+                <div class="flex items-center gap-4">
+                     <!-- Top Right User/Status Area -->
+                    <div class="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-2">
+                        <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="status-label" class="text-[10px] font-bold text-slate-400 uppercase">Offline</span>
+                    </div>
                 </div>
             </header>
 
-            <div class="bg-slate-800 border border-slate-700/50 rounded-3xl p-6 mb-6 shadow-xl overflow-hidden">
-                <div class="flex flex-col md:flex-row gap-8 items-center">
-                    <div class="text-center md:text-left min-w-[150px]">
-                        <p class="text-[10px] font-extrabold text-indigo-400 uppercase tracking-widest mb-1">Active Plan</p>
-                        <h3 id="plan-name-display" class="text-xl font-bold text-white truncate">...</h3>
+            <!-- OVERVIEW TAB (Dashboard Style) -->
+            <div id="tab-overview" class="tab-content active space-y-6">
+                
+                <!-- 1. Stats Cards Row -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <!-- Active Streams Card -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Streams</p>
+                                <h3 id="dash-active-count" class="text-3xl font-bold text-white mt-1">0</h3>
+                            </div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
+                                <i class="fas fa-broadcast-tower"></i>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5">
+                            <div id="dash-active-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div>
+                        </div>
                     </div>
-                    <div class="flex-1 w-full space-y-4">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="space-y-1.5">
-                                <div class="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                    <span>Storage</span><span id="storage-text">0 / 0 MB</span>
-                                </div>
-                                <div class="h-2 bg-slate-950 rounded-full overflow-hidden">
-                                    <div id="storage-bar" class="h-full bg-indigo-500 transition-all duration-700" style="width: 0%"></div>
-                                </div>
+
+                    <!-- CPU Usage Card -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CPU Usage</p>
+                                <h3 id="dash-cpu-val" class="text-3xl font-bold text-white mt-1">0%</h3>
                             </div>
-                            <div class="space-y-1.5">
-                                <div class="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                    <span>Time Used</span><span id="usage-text">0 / 0 H</span>
-                                </div>
-                                <div class="h-2 bg-slate-950 rounded-full overflow-hidden">
-                                    <div id="usage-bar" class="h-full bg-emerald-500 transition-all duration-700" style="width: 0%"></div>
-                                </div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
+                                <i class="fas fa-microchip"></i>
                             </div>
+                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5">
+                            <div id="dash-cpu-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Memory Usage Card -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Memory</p>
+                                <h3 id="dash-mem-val" class="text-xl font-bold text-white mt-2">0 MB <span class="text-slate-500 text-sm">/ 1 GB</span></h3>
+                            </div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
+                                <i class="fas fa-memory"></i>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5">
+                            <div id="dash-mem-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Disk Usage Card -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Disk Usage</p>
+                                <h3 id="dash-disk-val" class="text-xl font-bold text-white mt-2">0 GB <span class="text-slate-500 text-sm" id="dash-disk-max">/ 0 GB</span></h3>
+                            </div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
+                                <i class="fas fa-hdd"></i>
+                            </div>
+                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5">
+                            <div id="dash-disk-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div id="tab-overview" class="tab-content active space-y-6">
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-1">
-                        <div class="bg-slate-800/50 border border-slate-700/50 p-6 rounded-3xl h-full">
-                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-5">Broadcast Control</h4>
-                            <div id="live-card" class="hidden bg-emerald-500/10 border border-emerald-500/20 p-5 rounded-2xl mb-5 pulse-live text-center">
-                                <div class="mb-4"><span class="text-emerald-400 font-bold text-[10px] tracking-widest">LIVE TRANSMISSION</span></div>
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div class="bg-slate-900/50 rounded-xl p-3 border border-emerald-500/10 flex flex-col items-center justify-center">
-                                        <p class="text-[8px] text-emerald-500/70 font-bold uppercase mb-1"><i class="fas fa-clock mr-1"></i> DURATION</p>
-                                        <p id="stat-duration" class="text-sm font-mono font-bold text-white">00:00:00</p>
-                                    </div>
-                                    <div class="bg-slate-900/50 rounded-xl p-3 border border-emerald-500/10 flex flex-col items-center justify-center">
-                                        <p class="text-[8px] text-emerald-500/70 font-bold uppercase mb-1"><i class="fas fa-tachometer-alt mr-1"></i> BITRATE</p>
-                                        <p id="stat-bitrate" class="text-sm font-mono font-bold text-white">0 kbps</p>
-                                    </div>
-                                </div>
+                <!-- 2. Action Bar -->
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-8">
+                    <h3 class="text-lg font-bold text-white">Streaming Status</h3>
+                    <div class="flex gap-3 w-full md:w-auto">
+                        <div class="relative flex-1 md:w-64">
+                            <i class="fas fa-search absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                            <input type="text" placeholder="Search streams..." class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all">
+                        </div>
+                        <button onclick="switchTab('library')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 whitespace-nowrap">
+                            <i class="fas fa-plus"></i> New Stream
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 3. Streaming Status Table -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden mt-4">
+                    <!-- Table Header -->
+                    <div class="grid grid-cols-12 gap-4 p-4 bg-slate-800/50 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        <div class="col-span-5 md:col-span-4 pl-2">Stream Name</div>
+                        <div class="hidden md:block col-span-2">Platform</div>
+                        <div class="hidden md:block col-span-3">Stats</div>
+                        <div class="col-span-4 md:col-span-2">Status</div>
+                        <div class="col-span-3 md:col-span-1 text-right pr-2">Actions</div>
+                    </div>
+
+                    <!-- Empty State (Default) -->
+                    <div id="stream-empty-state" class="flex flex-col items-center justify-center py-16 text-slate-500">
+                        <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                            <i class="fas fa-satellite-dish text-2xl opacity-50"></i>
+                        </div>
+                        <p class="text-sm font-medium">No active streams.</p>
+                        <p class="text-xs opacity-50 mt-1">Start a new broadcast from the Library.</p>
+                    </div>
+
+                    <!-- Active Row (Dynamically populated) -->
+                    <div id="stream-active-row" class="hidden grid grid-cols-12 gap-4 p-4 items-center border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                        <div class="col-span-5 md:col-span-4 pl-2 flex items-center gap-3">
+                            <div class="w-10 h-10 bg-indigo-500/10 rounded-lg flex items-center justify-center border border-indigo-500/20">
+                                <i class="fas fa-play text-indigo-400 text-xs"></i>
                             </div>
-                            <div id="idle-msg" class="text-sm text-slate-400 mb-5 italic text-center py-4">Server Stand-by.</div>
-                            <button onclick="stopStream()" id="btn-stop-stream" class="hidden w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-bold text-sm transition-all">STOP STREAMING</button>
+                            <div class="overflow-hidden">
+                                <h4 class="text-sm font-bold text-white truncate">Live Broadcast</h4>
+                                <p class="text-xs text-slate-500 truncate" id="row-stream-id">ID: #Active</p>
+                            </div>
+                        </div>
+                        <div class="hidden md:block col-span-2">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300">
+                                <i class="fab fa-youtube text-red-500"></i> RTMP
+                            </span>
+                        </div>
+                        <div class="hidden md:block col-span-3">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-xs font-mono text-slate-300"><i class="fas fa-clock text-slate-600 mr-1"></i> <span id="row-duration">00:00:00</span></span>
+                                <span class="text-[10px] font-mono text-slate-500"><i class="fas fa-signal text-slate-600 mr-1"></i> <span id="row-bitrate">0 kbps</span></span>
+                            </div>
+                        </div>
+                        <div class="col-span-4 md:col-span-2">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 pulse-live">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> LIVE
+                            </span>
+                        </div>
+                        <div class="col-span-3 md:col-span-1 text-right pr-2">
+                            <button onclick="stopStream()" class="text-slate-400 hover:text-rose-500 transition-colors p-2 rounded-lg hover:bg-rose-500/10" title="Stop Stream">
+                                <i class="fas fa-stop-circle text-lg"></i>
+                            </button>
                         </div>
                     </div>
-                    <div class="lg:col-span-2 bg-slate-950 rounded-3xl border border-slate-800 h-[400px] overflow-hidden flex flex-col">
-                        <div class="p-3 border-b border-slate-800 bg-slate-900/50 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Logs Console</div>
-                        <div id="logConsole" class="flex-1 p-5 font-mono text-[10px] overflow-y-auto space-y-1"></div>
+                </div>
+
+                <!-- Footer -->
+                <div class="flex justify-between items-center text-xs text-slate-500 mt-4 px-2">
+                    <span id="showing-text">Showing 0 active streams</span>
+                    <div class="flex gap-2">
+                        <button class="px-3 py-1 bg-slate-800 rounded border border-slate-700 opacity-50 cursor-not-allowed"><i class="fas fa-chevron-left"></i></button>
+                        <button class="px-3 py-1 bg-slate-800 rounded border border-slate-700 opacity-50 cursor-not-allowed"><i class="fas fa-chevron-right"></i></button>
                     </div>
+                </div>
+
+                <!-- Hidden Logs (Optional, moved to bottom as accordion if needed, or hidden) -->
+                <div class="mt-8 pt-8 border-t border-slate-800">
+                    <details class="group">
+                        <summary class="flex justify-between items-center font-bold cursor-pointer list-none text-slate-500 text-xs uppercase tracking-wider">
+                            <span><i class="fas fa-terminal mr-2"></i> System Logs</span>
+                            <span class="transition group-open:rotate-180"><i class="fas fa-chevron-down"></i></span>
+                        </summary>
+                        <div id="logConsole" class="mt-4 p-4 bg-black/50 rounded-xl font-mono text-[10px] text-slate-400 h-32 overflow-y-auto border border-slate-800">
+                            <p>> LiteStream Dashboard Ready.</p>
+                        </div>
+                    </details>
                 </div>
             </div>
 
@@ -291,6 +404,7 @@
         let allMedia = [];
         let isLoginMode = true;
         let confirmCallback = null;
+        let isStreamActive = false;
         const PLATFORMS = { youtube: 'rtmp://a.rtmp.youtube.com/live2/', facebook: 'rtmps://live-api-s.facebook.com:443/rtmp/', twitch: 'rtmp://live.twitch.tv/app/' };
 
         function showToast(message, type = 'success') {
@@ -335,20 +449,38 @@
             
             const res = await fetch('/api/stream/status');
             const state = await res.json();
-            if (state.active) updateStreamUI(true);
+            updateStreamUI(state.active);
+            startMockStats(); // Mulai animasi CPU/RAM
         }
 
         function updateUIInfo() {
             if(!currentUser) return;
-            document.getElementById('plan-name-display').textContent = currentUser.plan_name;
+            // Update Disk Usage Card
             const usedMB = (currentUser.storage_used / (1024 * 1024)).toFixed(1);
-            document.getElementById('storage-text').textContent = `${usedMB} / ${currentUser.max_storage_mb} MB`;
-            document.getElementById('storage-bar').style.width = Math.min((usedMB / currentUser.max_storage_mb * 100), 100) + '%';
+            const maxMB = currentUser.max_storage_mb;
+            const usedGB = (usedMB / 1024).toFixed(2);
+            const maxGB = (maxMB / 1024).toFixed(2);
             
-            const usedHrs = ( (currentUser.usage_seconds || 0) / 3600).toFixed(1);
-            const limitHrs = currentUser.daily_limit_hours || 24;
-            document.getElementById('usage-text').textContent = `${usedHrs} / ${limitHrs} H`;
-            document.getElementById('usage-bar').style.width = Math.min((usedHrs / limitHrs * 100), 100) + '%';
+            document.getElementById('dash-disk-val').innerHTML = `${usedGB} GB <span class="text-slate-500 text-sm">/ ${maxGB} GB</span>`;
+            document.getElementById('dash-disk-bar').style.width = Math.min((usedMB / maxMB * 100), 100) + '%';
+        }
+
+        // --- Mock Data untuk Visual Dashboard agar terlihat "Hidup" ---
+        function startMockStats() {
+            setInterval(() => {
+                // CPU Random 5-15% (Idle) atau 20-45% (Streaming)
+                const baseCpu = isStreamActive ? 25 : 5;
+                const variance = Math.random() * 10;
+                const cpuVal = Math.floor(baseCpu + variance);
+                document.getElementById('dash-cpu-val').textContent = cpuVal + '%';
+                document.getElementById('dash-cpu-bar').style.width = cpuVal + '%';
+                
+                // Mem (Simulasi)
+                const baseMem = isStreamActive ? 450 : 250; 
+                const memVal = Math.floor(baseMem + (Math.random() * 20));
+                document.getElementById('dash-mem-val').innerHTML = `${memVal} MB <span class="text-slate-500 text-sm">/ 1 GB</span>`;
+                document.getElementById('dash-mem-bar').style.width = (memVal / 1024 * 100) + '%';
+            }, 2000);
         }
 
         async function fetchPublicPlans() {
@@ -356,8 +488,6 @@
             const plans = await res.json();
             document.getElementById('pricing-grid').innerHTML = plans.map(p => {
                 let extraControls = '';
-                
-                // LOGIKA KHUSUS: Paket Radio (ID 3)
                 if (p.id === 3) {
                      let options = '';
                      for(let i=1; i<=12; i++) options += `<option value="${i}">${i} Bulan</option>`;
@@ -370,8 +500,6 @@
                         </div>
                      `;
                 }
-
-                // Tampilkan fitur tambahan jika ada
                 const featuresList = p.features_text 
                     ? p.features_text.split(',').map(f => `<li><i class="fas fa-check text-indigo-400 mr-2"></i> ${f.trim()}</li>`).join('')
                     : '';
@@ -392,23 +520,15 @@
         }
 
         function updatePlanPrice(select, basePriceStr, planId) {
-            // Hapus karakter non-digit untuk dapat angka murni (Rp 75.000 -> 75000)
             const basePrice = parseInt(basePriceStr.replace(/[^0-9]/g, ''));
             const months = parseInt(select.value);
             if(isNaN(basePrice)) return;
-
             const total = basePrice * months;
-            const formatted = 'Rp ' + total.toLocaleString('id-ID'); // Format mata uang Indonesia
-
+            const formatted = 'Rp ' + total.toLocaleString('id-ID'); 
             const el = document.getElementById(`price-display-${planId}`);
-            
-            // Animasi kecil saat harga berubah
             if (el) {
                 el.style.opacity = '0';
-                setTimeout(() => {
-                    el.textContent = formatted;
-                    el.style.opacity = '1';
-                }, 150);
+                setTimeout(() => { el.textContent = formatted; el.style.opacity = '1'; }, 150);
             }
         }
 
@@ -428,7 +548,7 @@
             const filtered = allMedia.filter(m => m.type === (window.currentMediaTab || 'video'));
             document.getElementById('media-list').innerHTML = filtered.map(v => `
                 <div class="bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50 flex items-center gap-4 group">
-                    <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500">
+                    <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500 rounded focus:ring-0">
                     <div class="flex-1 truncate text-xs font-bold text-slate-300">${v.filename}</div>
                     <button onclick="deleteMedia(${v.id})" class="text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-trash"></i></button>
                 </div>`).join('');
@@ -447,8 +567,6 @@
         }
 
         async function startPlaylist() {
-            // Recalculate or ensure rtmpUrl is up to date from input if user edited settings without saving
-            // Use Saved settings preferably
             const rtmpUrl = document.getElementById('setting-full-rtmp').value;
             if (!rtmpUrl) {
                 showToast('Please configure Streaming Settings first!', 'error');
@@ -458,7 +576,7 @@
             
             const res = await fetch('/api/playlist/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ids: Array.from(selectedMedia), rtmpUrl, loop: true }) });
             const d = await res.json();
-            if (d.error) showToast(d.error, 'error'); else showToast(d.message);
+            if (d.error) showToast(d.error, 'error'); else { showToast(d.message); switchTab('overview'); }
         }
 
         async function fetchSettings() {
@@ -468,7 +586,7 @@
             document.getElementById('setting-key').value = d.stream_key || '';
             document.getElementById('setting-full-rtmp').value = d.rtmp_url || '';
             document.getElementById('setting-server-url').value = d.custom_server_url || '';
-            handlePlatformChange(); // Trigger UI state update
+            handlePlatformChange(); 
         }
 
         async function fetchUsers() {
@@ -482,28 +600,37 @@
                 </tr>`).join('');
         }
 
-        function updateStreamUI(isLive) {
-            document.getElementById('live-card').classList.toggle('hidden', !isLive);
-            document.getElementById('idle-msg').classList.toggle('hidden', isLive);
-            document.getElementById('btn-stop-stream').classList.toggle('hidden', !isLive);
-            document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500' : 'bg-slate-500'}`;
-            document.getElementById('status-label').textContent = isLive ? 'Live' : 'Offline';
+        function updateStreamUI(active) {
+            isStreamActive = active;
+            
+            // Toggle Top right Status
+            document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-500'}`;
+            document.getElementById('status-label').textContent = active ? 'Live' : 'Offline';
+
+            // Toggle Stats Card Active Stream Count
+            document.getElementById('dash-active-count').textContent = active ? '1' : '0';
+            document.getElementById('dash-active-bar').style.width = active ? '100%' : '0%';
+
+            // Toggle Table View (Empty State vs Active Row)
+            document.getElementById('stream-empty-state').classList.toggle('hidden', active);
+            document.getElementById('stream-active-row').classList.toggle('hidden', !active);
+            document.getElementById('stream-active-row').classList.toggle('grid', active); // Ensure grid class is applied when active
+            
+            // Footer Text
+            document.getElementById('showing-text').textContent = active ? 'Showing 1 active stream' : 'Showing 0 active streams';
         }
 
         socket.on('stats', (data) => {
-            document.getElementById('stat-duration').textContent = data.duration.split('.')[0]; 
-            document.getElementById('stat-bitrate').textContent = data.bitrate;
+            // Update Active Table Row Stats
+            document.getElementById('row-duration').textContent = data.duration.split('.')[0]; 
+            document.getElementById('row-bitrate').textContent = data.bitrate;
             
-            // Sync Usage Bar dynamically
+            // Update global user usage if needed
             if (data.usage_remaining !== undefined && currentUser) {
                 const limitHrs = currentUser.daily_limit_hours || 24;
                 const limitSecs = limitHrs * 3600;
                 const usedSecs = limitSecs - data.usage_remaining;
-                currentUser.usage_seconds = usedSecs; // Update local state
-                
-                const usedHrs = (usedSecs / 3600).toFixed(1);
-                document.getElementById('usage-text').textContent = `${usedHrs} / ${limitHrs} H`;
-                document.getElementById('usage-bar').style.width = Math.min((usedHrs / limitHrs * 100), 100) + '%';
+                currentUser.usage_seconds = usedSecs; 
             }
         });
 
@@ -522,14 +649,11 @@
         async function handleLogout() { await fetch('/api/logout', {method:'POST'}); location.reload(); }
         function showAuth(m) { 
             isLoginMode = m==='login'; 
-            // Reset UI state
-            toggleAuthMode(true); // Force update texts
+            toggleAuthMode(true); 
             document.getElementById('login-view').classList.remove('hidden'); 
         }
         function hideAuth() { document.getElementById('login-view').classList.add('hidden'); }
         
-        // --- NEW IMPLEMENTATIONS START ---
-
         function toggleAuthMode(force) {
             if (!force) isLoginMode = !isLoginMode;
             document.getElementById('auth-title').textContent = isLoginMode ? 'LiteStream Login' : 'Register Member';
@@ -543,7 +667,6 @@
             const user = document.getElementById('login-user').value;
             const pass = document.getElementById('login-pass').value;
             const endpoint = isLoginMode ? '/api/login' : '/api/register';
-            
             try {
                 const res = await fetch(endpoint, {
                     method: 'POST',
@@ -551,23 +674,14 @@
                     body: JSON.stringify({ username: user, password: pass })
                 });
                 const data = await res.json();
-                
                 if (data.success) {
-                    if (isLoginMode) {
-                        checkAuth();
-                    } else {
+                    if (isLoginMode) { checkAuth(); } else {
                         showToast('Registrasi berhasil! Silakan login.');
-                        isLoginMode = true; // Switch to login
-                        toggleAuthMode(true);
-                        document.getElementById('login-user').value = '';
-                        document.getElementById('login-pass').value = '';
+                        isLoginMode = true; toggleAuthMode(true);
+                        document.getElementById('login-user').value = ''; document.getElementById('login-pass').value = '';
                     }
-                } else {
-                    showToast(data.error || 'Authentication failed', 'error');
-                }
-            } catch (err) {
-                showToast('Connection error', 'error');
-            }
+                } else { showToast(data.error || 'Authentication failed', 'error'); }
+            } catch (err) { showToast('Connection error', 'error'); }
         }
 
         async function handleUpload(input) {
@@ -575,25 +689,13 @@
             const file = input.files[0];
             const formData = new FormData();
             formData.append('video', file);
-            
             showToast('Uploading media...', 'success');
-            
             try {
-                const res = await fetch('/api/videos/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+                const res = await fetch('/api/videos/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                
-                if (data.success) {
-                    showToast('Upload berhasil!');
-                    fetchMedia();
-                } else {
-                    showToast(data.error || 'Upload failed', 'error');
-                }
-            } catch (err) {
-                showToast('Upload error', 'error');
-            }
+                if (data.success) { showToast('Upload berhasil!'); fetchMedia(); updateUIInfo(); } // Update UI info to reflect new storage
+                else { showToast(data.error || 'Upload failed', 'error'); }
+            } catch (err) { showToast('Upload error', 'error'); }
             input.value = '';
         }
 
@@ -605,14 +707,10 @@
                     if (data.success) {
                         showToast('Media dihapus');
                         if (selectedMedia.has(id)) selectedMedia.delete(id);
-                        fetchMedia();
+                        fetchMedia(); updateUIInfo(); // Update storage UI
                         document.getElementById('selected-count').textContent = selectedMedia.size;
-                    } else {
-                        showToast(data.error, 'error');
-                    }
-                } catch (e) {
-                    showToast('Error deleting media', 'error');
-                }
+                    } else { showToast(data.error, 'error'); }
+                } catch (e) { showToast('Error deleting media', 'error'); }
             });
         }
 
@@ -625,15 +723,8 @@
         function toggleKeyVisibility() {
             const input = document.getElementById('setting-key');
             const icon = document.getElementById('eye-icon');
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                input.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
+            if (input.type === 'password') { input.type = 'text'; icon.classList.remove('fa-eye'); icon.classList.add('fa-eye-slash'); } 
+            else { input.type = 'password'; icon.classList.remove('fa-eye-slash'); icon.classList.add('fa-eye'); }
         }
 
         async function saveSettings(e) {
@@ -641,34 +732,19 @@
             const platform = document.getElementById('setting-platform').value;
             const key = document.getElementById('setting-key').value;
             const customUrl = document.getElementById('setting-server-url').value;
-            
             let rtmpUrl = '';
-            if (platform === 'custom') {
-                rtmpUrl = customUrl + key;
-            } else if (PLATFORMS[platform]) {
-                rtmpUrl = PLATFORMS[platform] + key;
-            }
-            
-            // Update hidden input immediately so user can start stream right away
+            if (platform === 'custom') { rtmpUrl = customUrl + key; } else if (PLATFORMS[platform]) { rtmpUrl = PLATFORMS[platform] + key; }
             document.getElementById('setting-full-rtmp').value = rtmpUrl;
 
             try {
                 const res = await fetch('/api/settings', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        stream_platform: platform,
-                        stream_key: key,
-                        custom_server_url: customUrl,
-                        rtmp_url: rtmpUrl
-                    })
+                    body: JSON.stringify({ stream_platform: platform, stream_key: key, custom_server_url: customUrl, rtmp_url: rtmpUrl })
                 });
                 const data = await res.json();
-                if (data.success) showToast('Settings saved!');
-                else showToast('Failed to save', 'error');
-            } catch(err) {
-                showToast('Error saving settings', 'error');
-            }
+                if (data.success) showToast('Settings saved!'); else showToast('Failed to save', 'error');
+            } catch(err) { showToast('Error saving settings', 'error'); }
         }
 
         async function saveProfile(e) {
@@ -676,7 +752,6 @@
             const username = document.getElementById('profile-username').value;
             const currentPass = document.getElementById('profile-current-pass').value;
             const newPass = document.getElementById('profile-new-pass').value;
-
             try {
                 const res = await fetch('/api/profile', {
                     method: 'PUT',
@@ -689,21 +764,15 @@
                     document.getElementById('profile-current-pass').value = '';
                     document.getElementById('profile-new-pass').value = '';
                     if (currentUser) currentUser.username = username;
-                } else {
-                    showToast(data.error, 'error');
-                }
-            } catch (err) {
-                showToast('Error updating profile', 'error');
-            }
+                } else { showToast(data.error, 'error'); }
+            } catch (err) { showToast('Error updating profile', 'error'); }
         }
 
         async function stopStream() {
             try {
                 await fetch('/api/stream/stop', {method:'POST'});
                 showToast('Stopping stream...', 'success');
-            } catch (e) {
-                showToast('Error stopping stream', 'error');
-            }
+            } catch (e) { showToast('Error stopping stream', 'error'); }
         }
 
         window.onload = checkAuth;
