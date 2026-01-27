@@ -69,19 +69,16 @@
 
         /* Admin Panel New Styles */
         .admin-tab { 
-            @apply px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-wider text-slate-500 transition-all hover:text-slate-300 cursor-pointer border border-transparent; 
+            @apply px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-all hover:text-white cursor-pointer; 
         }
         .admin-tab.active { 
-            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); 
+            background: #6366f1; 
             color: white; 
-            box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
-            padding-left: 1.5rem;
-            padding-right: 1.5rem;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
         }
         
         .user-card {
-            @apply bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col md:grid md:grid-cols-12 gap-4 items-center transition-all hover:border-slate-700 hover:shadow-lg hover:shadow-indigo-500/5 mb-3;
+            @apply bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col md:grid md:grid-cols-12 gap-4 items-center transition-all hover:border-slate-700 hover:shadow-lg hover:shadow-indigo-500/5 mb-4;
         }
     </style>
 </head>
@@ -525,8 +522,8 @@
 
                 <h2 class="text-2xl font-bold">Admin Panel</h2>
 
-                <!-- User Filter Tabs -->
-                <div class="flex flex-wrap gap-1 mb-6" id="admin-tabs-container">
+                <!-- User Filter Tabs (Capsule Style) -->
+                <div class="flex flex-wrap gap-2 p-1.5 bg-slate-900 rounded-2xl border border-slate-800 w-fit mb-8" id="admin-tabs-container">
                     <button onclick="filterUsers('all')" class="admin-tab active" id="tab-user-all">ALL USERS</button>
                     <button onclick="filterUsers('Trial')" class="admin-tab" id="tab-user-Trial">TRIAL</button>
                     <button onclick="filterUsers('Starter')" class="admin-tab" id="tab-user-Starter">STARTER</button>
