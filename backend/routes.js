@@ -50,7 +50,12 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => { cb(null, path.join(__dirname, 'uploads')); },
   filename: (req, file, cb) => { cb(null, Date.now() + '-' + file.originalname.replace(/\s+/g, '_')); }
 });
-const upload = multer({ storage });
+
+// UPDATE: Set explicit limit to 1GB
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 1024 * 1024 * 1024 } 
+});
 
 router.get('/plans-public', (req, res) => {
   db.all("SELECT * FROM plans", (err, rows) => res.json(rows));

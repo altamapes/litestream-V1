@@ -24,9 +24,10 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 global.io = io;
 
+// INCREASED LIMITS HERE
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
 app.use(session({
   store: new SQLiteStore({ db: 'sessions.sqlite', dir: __dirname }),
