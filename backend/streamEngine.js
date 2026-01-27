@@ -9,6 +9,7 @@ let currentCommand = null;
 let activeInputStream = null; 
 let currentStreamLoopActive = false; 
 let currentStreamUserId = null;
+let currentPlaylistPath = null;
 
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
   if (currentCommand) {
@@ -82,14 +83,17 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ]);
 
     } else {
-      const playlistPath = path.join(__dirname, 'uploads', 'playlist.txt');
+      // Use unique playlist name to prevent collisions
+      const uniqueId = Date.now() + '_' + Math.random().toString(36).substring(7);
+      currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
+      
       const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
-      fs.writeFileSync(playlistPath, playlistContent);
+      fs.writeFileSync(currentPlaylistPath, playlistContent);
 
       const videoInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
       if (shouldLoop) videoInputOpts.unshift('-stream_loop', '-1');
 
-      command.input(playlistPath).inputOptions(videoInputOpts);
+      command.input(currentPlaylistPath).inputOptions(videoInputOpts);
       command.outputOptions(['-c copy', '-f flv', '-flvflags no_duration_filesize']);
     }
 
@@ -138,15 +142,28 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       .on('error', (err) => {
         if (err.message.includes('SIGKILL')) return;
         currentCommand = null;
+        cleanupPlaylist();
         reject(err);
       })
       .on('end', () => {
         currentCommand = null;
+        cleanupPlaylist();
         resolve();
       });
 
     currentCommand.save(rtmpUrl);
   });
+};
+
+const cleanupPlaylist = () => {
+  if (currentPlaylistPath && fs.existsSync(currentPlaylistPath)) {
+    try {
+      fs.unlinkSync(currentPlaylistPath);
+      currentPlaylistPath = null;
+    } catch (e) {
+      console.error("Failed to delete playlist file:", e);
+    }
+  }
 };
 
 const stopStream = () => {
@@ -159,6 +176,7 @@ const stopStream = () => {
   if (currentCommand) {
     try { currentCommand.kill('SIGKILL'); } catch (e) {}
     currentCommand = null;
+    cleanupPlaylist();
     return true;
   }
   return false;

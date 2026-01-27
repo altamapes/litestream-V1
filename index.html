@@ -213,11 +213,6 @@
                     <input type="file" id="file-up" class="hidden" onchange="handleUpload(this)">
                 </div>
 
-                <div class="relative">
-                    <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-500"></i>
-                    <input type="text" id="media-search" oninput="renderMediaList()" placeholder="Search filenames..." class="w-full bg-slate-800/50 border border-slate-700/50 rounded-2xl pl-12 pr-5 py-3 text-sm text-white outline-none focus:border-indigo-500 transition-all">
-                </div>
-
                 <div class="flex p-1 bg-slate-900 rounded-2xl border border-slate-800 w-fit">
                     <button onclick="switchMediaTab('video')" id="mt-video" class="media-subtab active px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Videos</button>
                     <button onclick="switchMediaTab('audio')" id="mt-audio" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Audios</button>
@@ -333,6 +328,9 @@
             document.getElementById('login-view').classList.add('hidden');
             updateUIInfo();
             if (currentUser.role === 'admin') document.getElementById('nav-users').classList.remove('hidden');
+            if (currentUser) {
+                document.getElementById('profile-username').value = currentUser.username;
+            }
             fetchMedia(); fetchSettings();
             
             const res = await fetch('/api/stream/status');
@@ -427,11 +425,7 @@
         }
 
         function renderMediaList() {
-            const query = document.getElementById('media-search') ? document.getElementById('media-search').value.toLowerCase() : '';
-            const filtered = allMedia.filter(m => 
-                m.type === (window.currentMediaTab || 'video') && 
-                m.filename.toLowerCase().includes(query)
-            );
+            const filtered = allMedia.filter(m => m.type === (window.currentMediaTab || 'video'));
             document.getElementById('media-list').innerHTML = filtered.map(v => `
                 <div class="bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50 flex items-center gap-4 group">
                     <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500">
@@ -453,7 +447,15 @@
         }
 
         async function startPlaylist() {
+            // Recalculate or ensure rtmpUrl is up to date from input if user edited settings without saving
+            // Use Saved settings preferably
             const rtmpUrl = document.getElementById('setting-full-rtmp').value;
+            if (!rtmpUrl) {
+                showToast('Please configure Streaming Settings first!', 'error');
+                switchTab('settings');
+                return;
+            }
+            
             const res = await fetch('/api/playlist/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ids: Array.from(selectedMedia), rtmpUrl, loop: true }) });
             const d = await res.json();
             if (d.error) showToast(d.error, 'error'); else showToast(d.message);
@@ -465,6 +467,8 @@
             document.getElementById('setting-platform').value = d.stream_platform || 'youtube';
             document.getElementById('setting-key').value = d.stream_key || '';
             document.getElementById('setting-full-rtmp').value = d.rtmp_url || '';
+            document.getElementById('setting-server-url').value = d.custom_server_url || '';
+            handlePlatformChange(); // Trigger UI state update
         }
 
         async function fetchUsers() {
@@ -516,8 +520,192 @@
         });
 
         async function handleLogout() { await fetch('/api/logout', {method:'POST'}); location.reload(); }
-        function showAuth(m) { isLoginMode = m==='login'; document.getElementById('login-view').classList.remove('hidden'); }
+        function showAuth(m) { 
+            isLoginMode = m==='login'; 
+            // Reset UI state
+            toggleAuthMode(true); // Force update texts
+            document.getElementById('login-view').classList.remove('hidden'); 
+        }
         function hideAuth() { document.getElementById('login-view').classList.add('hidden'); }
+        
+        // --- NEW IMPLEMENTATIONS START ---
+
+        function toggleAuthMode(force) {
+            if (!force) isLoginMode = !isLoginMode;
+            document.getElementById('auth-title').textContent = isLoginMode ? 'LiteStream Login' : 'Register Member';
+            document.getElementById('auth-btn').textContent = isLoginMode ? 'MASUK DASHBOARD' : 'DAFTAR SEKARANG';
+            document.getElementById('toggle-text').textContent = isLoginMode ? 'Belum punya akun?' : 'Sudah punya akun?';
+            document.getElementById('toggle-btn').textContent = isLoginMode ? 'Daftar Sekarang' : 'Login Member';
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault();
+            const user = document.getElementById('login-user').value;
+            const pass = document.getElementById('login-pass').value;
+            const endpoint = isLoginMode ? '/api/login' : '/api/register';
+            
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user, password: pass })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    if (isLoginMode) {
+                        checkAuth();
+                    } else {
+                        showToast('Registrasi berhasil! Silakan login.');
+                        isLoginMode = true; // Switch to login
+                        toggleAuthMode(true);
+                        document.getElementById('login-user').value = '';
+                        document.getElementById('login-pass').value = '';
+                    }
+                } else {
+                    showToast(data.error || 'Authentication failed', 'error');
+                }
+            } catch (err) {
+                showToast('Connection error', 'error');
+            }
+        }
+
+        async function handleUpload(input) {
+            if (!input.files || !input.files[0]) return;
+            const file = input.files[0];
+            const formData = new FormData();
+            formData.append('video', file);
+            
+            showToast('Uploading media...', 'success');
+            
+            try {
+                const res = await fetch('/api/videos/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showToast('Upload berhasil!');
+                    fetchMedia();
+                } else {
+                    showToast(data.error || 'Upload failed', 'error');
+                }
+            } catch (err) {
+                showToast('Upload error', 'error');
+            }
+            input.value = '';
+        }
+
+        function deleteMedia(id) {
+            openConfirmModal('Hapus media ini secara permanen?', async () => {
+                try {
+                    const res = await fetch(`/api/videos/${id}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast('Media dihapus');
+                        if (selectedMedia.has(id)) selectedMedia.delete(id);
+                        fetchMedia();
+                        document.getElementById('selected-count').textContent = selectedMedia.size;
+                    } else {
+                        showToast(data.error, 'error');
+                    }
+                } catch (e) {
+                    showToast('Error deleting media', 'error');
+                }
+            });
+        }
+
+        function handlePlatformChange() {
+            const platform = document.getElementById('setting-platform').value;
+            const isCustom = platform === 'custom';
+            document.getElementById('server-url-container').classList.toggle('hidden', !isCustom);
+        }
+
+        function toggleKeyVisibility() {
+            const input = document.getElementById('setting-key');
+            const icon = document.getElementById('eye-icon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+
+        async function saveSettings(e) {
+            e.preventDefault();
+            const platform = document.getElementById('setting-platform').value;
+            const key = document.getElementById('setting-key').value;
+            const customUrl = document.getElementById('setting-server-url').value;
+            
+            let rtmpUrl = '';
+            if (platform === 'custom') {
+                rtmpUrl = customUrl + key;
+            } else if (PLATFORMS[platform]) {
+                rtmpUrl = PLATFORMS[platform] + key;
+            }
+            
+            // Update hidden input immediately so user can start stream right away
+            document.getElementById('setting-full-rtmp').value = rtmpUrl;
+
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        stream_platform: platform,
+                        stream_key: key,
+                        custom_server_url: customUrl,
+                        rtmp_url: rtmpUrl
+                    })
+                });
+                const data = await res.json();
+                if (data.success) showToast('Settings saved!');
+                else showToast('Failed to save', 'error');
+            } catch(err) {
+                showToast('Error saving settings', 'error');
+            }
+        }
+
+        async function saveProfile(e) {
+            e.preventDefault();
+            const username = document.getElementById('profile-username').value;
+            const currentPass = document.getElementById('profile-current-pass').value;
+            const newPass = document.getElementById('profile-new-pass').value;
+
+            try {
+                const res = await fetch('/api/profile', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ username, currentPassword: currentPass, newPassword: newPass })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message);
+                    document.getElementById('profile-current-pass').value = '';
+                    document.getElementById('profile-new-pass').value = '';
+                    if (currentUser) currentUser.username = username;
+                } else {
+                    showToast(data.error, 'error');
+                }
+            } catch (err) {
+                showToast('Error updating profile', 'error');
+            }
+        }
+
+        async function stopStream() {
+            try {
+                await fetch('/api/stream/stop', {method:'POST'});
+                showToast('Stopping stream...', 'success');
+            } catch (e) {
+                showToast('Error stopping stream', 'error');
+            }
+        }
+
         window.onload = checkAuth;
     </script>
 </body>
