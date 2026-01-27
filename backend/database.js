@@ -59,19 +59,19 @@ const initDB = () => {
       db.run(`CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, filename TEXT NOT NULL, path TEXT NOT NULL, size INTEGER, type TEXT DEFAULT 'video', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
       db.run(`CREATE TABLE IF NOT EXISTS stream_settings (key TEXT PRIMARY KEY, value TEXT)`);
 
-      // 3. Seeding Data Plans (ID 1 diatur 5 Jam sesuai permintaan)
+      // 3. Seeding Data Plans (UPDATE: ID 1 allow 3 streams)
       const plans = [
-        [1, 'Paket Free Trial', 2048, 'video,audio', 1, 'Gratis', 'Max 720p, Batasan 5 Jam/hari, Auto Reconnect', 5],
-        [2, 'Paket Pro (Creator)', 10240, 'video,audio', 2, 'Rp 100.000', 'Max 1080p, 24 Jam Non-stop, Multi-Target', 24],
-        [3, 'Paket Radio 24/7', 5120, 'audio', 1, 'Rp 75.000', 'Khusus Radio MP3, Visualisasi Cover, Shuffle Playlist', 24],
-        [4, 'Paket Sultan (Private)', 25600, 'video,audio', 5, 'Rp 250.000', 'Dedicated VPS, Unlimited Platform, Setup Dibantu Full', 24]
+        [1, 'Paket Free Trial', 2048, 'video,audio', 3, 'Gratis', 'Max 720p, Batasan 5 Jam/hari, Multi-Stream Ready', 5],
+        [2, 'Paket Pro (Creator)', 10240, 'video,audio', 5, 'Rp 100.000', 'Max 1080p, 24 Jam Non-stop, Multi-Target', 24],
+        [3, 'Paket Radio 24/7', 5120, 'audio', 3, 'Rp 75.000', 'Khusus Radio MP3, Visualisasi Cover, Shuffle Playlist', 24],
+        [4, 'Paket Sultan (Private)', 25600, 'video,audio', 10, 'Rp 250.000', 'Dedicated VPS, Unlimited Platform, Setup Dibantu Full', 24]
       ];
       
       plans.forEach(p => {
         db.run(`INSERT OR IGNORE INTO plans (id, name, max_storage_mb, allowed_types, max_active_streams, price_text, features_text, daily_limit_hours) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, p);
-        // Update limit jika paket sudah ada (pastikan id 1 tetap 5 jam)
-        db.run(`UPDATE plans SET daily_limit_hours = ? WHERE id = ?`, [p[7], p[0]]);
+        // Force update limits to ensure existing DB gets new values
+        db.run(`UPDATE plans SET max_active_streams = ?, daily_limit_hours = ? WHERE id = ?`, [p[4], p[7], p[0]]);
       });
 
       // Seeding Default Settings

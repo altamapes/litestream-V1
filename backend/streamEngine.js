@@ -21,17 +21,22 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let lastProcessedSecond = 0;
     let currentPlaylistPath = null;
     let activeInputStream = null;
+    let hasStarted = false;
 
     // --- AUDIO HANDLING ---
     if (isAllAudio) {
       const mixedStream = new PassThrough();
       activeInputStream = mixedStream;
       let fileIndex = 0;
-      let isLoopingActive = true; // Local loop flag for this specific stream
 
       const playNextSong = () => {
-        if (!activeStreams.has(streamId)) return; // Stop if stream removed
+        if (!activeStreams.has(streamId) && hasStarted) return; // Stop if stream removed
         
+        if (fileIndex >= files.length) {
+            if (loop) { fileIndex = 0; } 
+            else { mixedStream.end(); return; }
+        }
+
         const currentFile = files[fileIndex];
         const songStream = fs.createReadStream(currentFile);
         
@@ -39,27 +44,20 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
         songStream.on('end', () => {
            fileIndex++;
-           if (fileIndex >= files.length) {
-             if (loop) {
-               fileIndex = 0; 
-               playNextSong(); 
-             } else {
-               mixedStream.end();
-             }
-           } else {
-             playNextSong();
-           }
+           playNextSong();
         });
         
         songStream.on('error', (err) => {
            console.error(`Error reading file ${currentFile}:`, err);
-           fileIndex++; // Skip bad file
-           if (fileIndex < files.length) playNextSong();
+           fileIndex++;
+           playNextSong();
         });
       };
 
       playNextSong();
 
+      // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
+      // Reduced resolution to 720p, bitrate to 2000k, fps to 20
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
@@ -68,9 +66,9 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       // Input 1: Image/Color
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
-        command.input('color=c=black:s=1280x720:r=24').inputOptions(['-f lavfi', '-re']);
+        command.input('color=c=black:s=1280x720:r=20').inputOptions(['-f lavfi', '-re']);
       } else {
-        command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 2', '-re']); 
+        command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 1', '-re']); 
       }
 
       // Input 2: Audio Stream
@@ -78,9 +76,9 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       command.outputOptions([
         '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
-        '-c:v libx264', '-preset ultrafast', '-r 24', '-g 48', '-keyint_min 48', '-sc_threshold 0',
-        '-b:v 3000k', '-minrate 3000k', '-maxrate 3000k', '-bufsize 6000k', '-nal-hrd cbr',
-        '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
+        '-c:v libx264', '-preset ultrafast', '-tune zerolatency', '-r 20', '-g 40', '-keyint_min 40', '-sc_threshold 0',
+        '-b:v 2000k', '-minrate 2000k', '-maxrate 2000k', '-bufsize 4000k', '-nal-hrd cbr',
+        '-c:a aac', '-b:a 96k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
@@ -103,7 +101,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     // --- EVENTS ---
     command
       .on('start', (commandLine) => {
-        // Save state immediately
+        hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
             userId, 
@@ -111,14 +109,13 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             activeInputStream,
             startTime: Date.now(),
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : (rtmpUrl.includes('facebook') ? 'Facebook' : (rtmpUrl.includes('twitch') ? 'Twitch' : 'Custom')),
-            name: `Stream ${streamId.substr(0,4)}` // Simple name or pass from options
+            name: `Stream ${streamId.substr(0,4)}`
         });
         
         if (global.io) global.io.emit('log', { type: 'start', message: `Stream ${streamId} Started.`, streamId });
-        resolve(streamId); // Return ID to controller
+        resolve(streamId);
       })
       .on('progress', (progress) => {
-        // Usage calculation logic (Additive per stream)
         const currentTimemark = progress.timemark; 
         const parts = currentTimemark.split(':');
         const totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
@@ -127,10 +124,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         if (diff >= 5) { 
             lastProcessedSecond = totalSeconds;
             
-            db.get(`
-                SELECT u.usage_seconds, p.daily_limit_hours 
-                FROM users u JOIN plans p ON u.plan_id = p.id 
-                WHERE u.id = ?`, [userId], (err, row) => {
+            db.get(`SELECT u.usage_seconds, p.daily_limit_hours FROM users u JOIN plans p ON u.plan_id = p.id WHERE u.id = ?`, [userId], (err, row) => {
                 if (row) {
                     const newUsage = row.usage_seconds + diff;
                     const limitSeconds = row.daily_limit_hours * 3600;
@@ -155,11 +149,15 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         }
       })
       .on('error', (err) => {
-        if (!err.message.includes('SIGKILL')) {
+        if (!hasStarted) {
+            // Reject promise if startup fails
+            reject(new Error(err.message));
+        }
+        
+        if (!err.message.includes('SIGKILL') && hasStarted) {
             console.error(`Stream ${streamId} Error:`, err.message);
         }
         cleanupStream(streamId);
-        // Do not reject if it was already resolved (started)
       })
       .on('end', () => {
         if (global.io) global.io.emit('log', { type: 'end', message: `Stream ${streamId} Ended.`, streamId });
@@ -179,8 +177,6 @@ const cleanupStream = (streamId) => {
   }
   
   activeStreams.delete(streamId);
-  
-  // Notify frontend of removal
   if (global.io) global.io.emit('stream_ended', { streamId });
 };
 
