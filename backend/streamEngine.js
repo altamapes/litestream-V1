@@ -57,7 +57,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       playNextSong();
 
       // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
-      // FIX: Add 'noise' filter to force encoder to generate bits even on static images
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
@@ -80,17 +79,17 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
         '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', // 25 FPS Standard
         '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', 
-        '-bufsize 2500k', // Tighter buffer to force CBR
+        '-bufsize 5000k', // Relaxed buffer for audio mode too
         '-nal-hrd cbr', 
         '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
     } 
-    // --- VIDEO HANDLING (FIXED & IMPROVED) ---
+    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY) ---
     else {
-      // Standardize Video Filter: Scale to 720p, Pad to 16:9, Force Square Pixels (setsar=1)
-      const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1';
+      // Standardize Video Filter: Scale to 720p, Pad to 16:9
+      const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
       
       // LOGIC BRANCH: Single File vs Playlist
       if (files.length === 1) {
@@ -118,7 +117,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       }
       
       // UNIVERSAL OUTPUT OPTIONS (Transcoding)
-      // FIX: Added CBR (Constant Bitrate) settings to satisfy YouTube requirements
+      // FIX: Relaxed buffers and added queue size to prevent MP4 crashes
       command.outputOptions([
         '-c:v libx264',
         '-preset ultrafast', 
@@ -126,16 +125,18 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         `-vf ${videoFilter}`,
         '-pix_fmt yuv420p',
         '-r 30',
-        '-g 60',
+        '-g 60',            // Keyframe every 2 seconds (30fps * 2)
         '-b:v 2500k',       // Target Bitrate
         '-minrate 2500k',   // FORCE Minimum Bitrate
         '-maxrate 2500k',   // FORCE Maximum Bitrate
-        '-bufsize 2500k',   // Tighter Buffer (was 5000k) to prevent dipping
+        '-bufsize 5000k',   // BUFFER INCREASED: Prevent underflow/overflow on complex scenes
         '-nal-hrd cbr',     // Enforce CBR compliance
+        '-max_muxing_queue_size 9999', // FIX: Prevent "Too many packets buffered" error
         '-c:a aac',
         '-ar 44100',
         '-b:a 128k',
-        '-ac 2',            // Force Stereo
+        '-ac 2',            
+        '-af aresample=async=1', // FIX: Ensure audio sync even if sample rate differs
         '-bsf:a aac_adtstoasc',
         '-f flv',
         '-flvflags no_duration_filesize'
