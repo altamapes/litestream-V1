@@ -23,10 +23,10 @@
         }
 
         /* Scrollbar styling */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
         .nav-link.active { color: white; background: rgba(99, 102, 241, 0.1); border-left: 3px solid #6366f1; border-radius: 0 12px 12px 0; }
         .nav-link.active i { color: #818cf8; }
@@ -50,6 +50,10 @@
         .toast-enter-active { transform: translateY(0); opacity: 1; transition: all 0.3s ease-out; }
         .toast-exit { transform: translateY(0); opacity: 1; }
         .toast-exit-active { transform: translateY(20px); opacity: 0; transition: all 0.3s ease-in; }
+        
+        /* Modal specific */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
     </style>
 </head>
 <body class="min-h-screen">
@@ -106,8 +110,122 @@
         </div>
     </div>
 
+    <!-- NEW STREAM MODAL (Design Matching) -->
+    <div id="new-stream-modal" class="hidden fixed inset-0 z-[150] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl relative modal-enter flex flex-col max-h-[90vh]">
+            
+            <!-- Header -->
+            <div class="flex justify-between items-center p-6 border-b border-slate-800">
+                <h2 class="text-xl font-bold text-white">New Stream</h2>
+                <button onclick="closeNewStreamModal()" class="text-slate-500 hover:text-white transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto space-y-5 custom-scrollbar flex-1">
+                
+                <!-- Stream Destinations (Placeholder Box) -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stream Destinations</label>
+                        <span class="text-[10px] font-bold text-indigo-400">0 added</span>
+                    </div>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center text-slate-600 gap-2">
+                        <p class="text-xs italic">No destinations added yet.</p>
+                    </div>
+                </div>
+
+                <!-- Platform Selection (Dropdown UI) -->
+                <div class="relative">
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <i class="fas fa-link absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                            <input type="text" id="modal-platform-display" readonly placeholder="Pilih Platform via List (Custom Locked)" 
+                                class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs font-bold text-white outline-none cursor-not-allowed opacity-70">
+                        </div>
+                        <button onclick="togglePlatformDropdown()" class="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-indigo-400 w-12 rounded-xl flex items-center justify-center transition-all">
+                            <i class="fas fa-list"></i>
+                        </button>
+                    </div>
+
+                    <!-- Absolute Dropdown Menu -->
+                    <div id="platform-dropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
+                        <button onclick="selectModalPlatform('YouTube', 'youtube')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                            <i class="fab fa-youtube text-red-500 w-4"></i> YouTube
+                        </button>
+                        <button onclick="selectModalPlatform('Facebook', 'facebook')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                            <i class="fab fa-facebook text-blue-500 w-4"></i> Facebook
+                        </button>
+                        <button onclick="selectModalPlatform('Twitch', 'twitch')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                            <i class="fab fa-twitch text-purple-500 w-4"></i> Twitch
+                        </button>
+                        <div class="h-px bg-slate-700 my-1"></div>
+                        <button onclick="selectModalPlatform('Custom RTMP', 'custom')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
+                            <i class="fas fa-server text-slate-400 w-4"></i> Custom RTMP
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Hidden Real Inputs -->
+                <input type="hidden" id="modal-platform-value">
+                <!-- Custom Server URL (Hidden by default) -->
+                <div id="modal-custom-url-group" class="hidden relative">
+                    <i class="fas fa-globe absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                    <input type="text" id="modal-custom-url" placeholder="rtmp://server/app" 
+                        class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500">
+                </div>
+
+                <!-- Stream Key -->
+                <div class="relative">
+                    <i class="fas fa-key absolute left-4 top-3.5 text-slate-500 text-xs"></i>
+                    <input type="password" id="modal-stream-key" placeholder="Stream Key" 
+                        class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 font-mono">
+                </div>
+
+                <!-- Schedule Settings (Visual Only) -->
+                <div>
+                    <h3 class="text-[10px] font-bold text-white mb-2">Schedule Settings</h3>
+                </div>
+
+                <!-- Loop Playlist -->
+                <div class="flex justify-between items-center">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">LOOP PLAYLIST</label>
+                    <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" name="toggle" id="modal-loop-toggle" class="toggle-checkbox absolute block w-4 h-4 rounded-full bg-white border-4 appearance-none cursor-pointer checked:right-0 checked:bg-indigo-500"/>
+                        <label for="modal-loop-toggle" class="toggle-label block overflow-hidden h-4 rounded-full bg-slate-700 cursor-pointer"></label>
+                    </div>
+                </div>
+
+                <!-- Select Playlist -->
+                <div>
+                    <div class="flex gap-2 mb-2">
+                        <button onclick="switchModalMediaTab('video')" id="mmt-video" class="modal-media-tab active px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">VIDEOS</button>
+                        <button onclick="switchModalMediaTab('audio')" id="mmt-audio" class="modal-media-tab px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">AUDIOS</button>
+                        <button onclick="switchModalMediaTab('image')" id="mmt-image" class="modal-media-tab px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">IMAGES</button>
+                    </div>
+                    
+                    <div id="modal-media-list" class="bg-slate-950 border border-slate-800 rounded-xl p-4 h-32 overflow-y-auto custom-scrollbar">
+                        <!-- Content injected via JS -->
+                        <div class="flex flex-col items-center justify-center h-full text-slate-600">
+                            <p class="text-xs italic">No files found.</p>
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-slate-500 mt-2 text-right">Selected: <span id="modal-selected-count" class="text-indigo-400">0</span></p>
+                </div>
+
+            </div>
+
+            <!-- Footer Action -->
+            <div class="p-6 pt-0 border-t border-transparent">
+                <button onclick="goLiveFromModal()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition-all">
+                    <i class="fas fa-play text-xs"></i> Go Live
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- CUSTOM CONFIRM MODAL -->
-    <div id="custom-confirm-modal" class="hidden fixed inset-0 z-[110] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div id="custom-confirm-modal" class="hidden fixed inset-0 z-[160] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative transform transition-all scale-100">
             <div class="text-center mb-6">
                 <div class="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -123,7 +241,7 @@
         </div>
     </div>
 
-    <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[120] flex flex-col gap-2 w-full max-w-xs pointer-events-none"></div>
+    <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[170] flex flex-col gap-2 w-full max-w-xs pointer-events-none"></div>
 
     <div id="main-app" class="view-section flex flex-col md:flex-row min-h-screen">
         <aside class="hidden md:flex w-64 bg-slate-900 border-r border-slate-800 flex-col py-8 sticky top-0 h-screen">
@@ -232,7 +350,7 @@
                             <i class="fas fa-search absolute left-4 top-3.5 text-slate-500 text-xs"></i>
                             <input type="text" placeholder="Search streams..." class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all">
                         </div>
-                        <button onclick="switchTab('library')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 whitespace-nowrap">
+                        <button onclick="openNewStreamModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 whitespace-nowrap">
                             <i class="fas fa-plus"></i> New Stream
                         </button>
                     </div>
@@ -320,7 +438,6 @@
                 <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h2 class="text-2xl font-bold">Media Library</h2>
                     <div class="flex gap-2">
-                        <button id="btn-start-playlist" onclick="startPlaylist()" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-2xl font-bold text-sm">START (<span id="selected-count">0</span>)</button>
                         <button onclick="document.getElementById('file-up').click()" class="bg-indigo-600 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-indigo-500 transition-all">Upload Media</button>
                     </div>
                     <input type="file" id="file-up" class="hidden" onchange="handleUpload(this)">
@@ -405,6 +522,11 @@
         let isLoginMode = true;
         let confirmCallback = null;
         let isStreamActive = false;
+        
+        // Modal Specific Variables
+        let modalSelectedMedia = new Set();
+        let currentModalMediaTab = 'video';
+        
         const PLATFORMS = { youtube: 'rtmp://a.rtmp.youtube.com/live2/', facebook: 'rtmps://live-api-s.facebook.com:443/rtmp/', twitch: 'rtmp://live.twitch.tv/app/' };
 
         function showToast(message, type = 'success') {
@@ -425,6 +547,136 @@
 
         function closeConfirmModal() { document.getElementById('custom-confirm-modal').classList.add('hidden'); }
         document.getElementById('btn-confirm-action').onclick = () => { confirmCallback?.(); closeConfirmModal(); };
+
+        /* --- NEW MODAL LOGIC START --- */
+        function openNewStreamModal() {
+            document.getElementById('new-stream-modal').classList.remove('hidden');
+            document.getElementById('new-stream-modal').classList.add('flex');
+            modalSelectedMedia.clear();
+            updateModalSelectionCount();
+            
+            // Fetch Media for the modal specifically
+            fetchMedia().then(() => {
+                renderModalMediaList();
+            });
+            
+            // Pre-fill key/settings if available locally (or leave blank to force user)
+            // Optional: document.getElementById('modal-stream-key').value = ...
+        }
+
+        function closeNewStreamModal() {
+            document.getElementById('new-stream-modal').classList.add('hidden');
+            document.getElementById('new-stream-modal').classList.remove('flex');
+        }
+
+        function togglePlatformDropdown() {
+            document.getElementById('platform-dropdown').classList.toggle('hidden');
+        }
+
+        function selectModalPlatform(name, value) {
+            document.getElementById('modal-platform-display').value = name;
+            document.getElementById('modal-platform-value').value = value;
+            document.getElementById('platform-dropdown').classList.add('hidden');
+            
+            // Show Custom URL field if custom
+            const isCustom = value === 'custom';
+            document.getElementById('modal-custom-url-group').classList.toggle('hidden', !isCustom);
+        }
+
+        function switchModalMediaTab(tab) {
+            currentModalMediaTab = tab;
+            document.querySelectorAll('.modal-media-tab').forEach(t => {
+                t.classList.toggle('active', t.id === 'mmt-' + tab);
+                t.classList.toggle('bg-slate-800', t.id !== 'mmt-' + tab);
+                t.classList.toggle('text-slate-400', t.id !== 'mmt-' + tab);
+                
+                // Active styles mimicking the pill shape in design
+                if(t.id === 'mmt-' + tab) {
+                    t.classList.remove('bg-slate-800', 'text-slate-400');
+                    t.classList.add('bg-indigo-600', 'text-white', 'border-transparent');
+                } else {
+                    t.classList.add('border-slate-700');
+                    t.classList.remove('bg-indigo-600', 'text-white', 'border-transparent');
+                }
+            });
+            renderModalMediaList();
+        }
+
+        function renderModalMediaList() {
+            const filtered = allMedia.filter(m => m.type === currentModalMediaTab);
+            const container = document.getElementById('modal-media-list');
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-slate-600">
+                        <p class="text-xs italic">No files found.</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(v => `
+                <div onclick="toggleModalMediaSelect(${v.id})" class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors ${modalSelectedMedia.has(v.id) ? 'bg-indigo-900/20 border border-indigo-500/30' : ''}">
+                    <div class="w-4 h-4 rounded border ${modalSelectedMedia.has(v.id) ? 'bg-indigo-500 border-indigo-500 flex items-center justify-center' : 'border-slate-600'}">
+                        ${modalSelectedMedia.has(v.id) ? '<i class="fas fa-check text-[8px] text-white"></i>' : ''}
+                    </div>
+                    <div class="truncate text-[10px] font-bold text-slate-300 flex-1">${v.filename}</div>
+                    <div class="text-[9px] text-slate-500 uppercase">${v.type}</div>
+                </div>
+            `).join('');
+        }
+
+        function toggleModalMediaSelect(id) {
+            if (modalSelectedMedia.has(id)) modalSelectedMedia.delete(id);
+            else modalSelectedMedia.add(id);
+            renderModalMediaList(); // Re-render to show selection state
+            updateModalSelectionCount();
+        }
+
+        function updateModalSelectionCount() {
+            document.getElementById('modal-selected-count').textContent = modalSelectedMedia.size;
+        }
+
+        async function goLiveFromModal() {
+            const platformVal = document.getElementById('modal-platform-value').value;
+            const customUrlVal = document.getElementById('modal-custom-url').value;
+            const keyVal = document.getElementById('modal-stream-key').value;
+            const loopVal = document.getElementById('modal-loop-toggle').checked;
+
+            if (!platformVal) { showToast('Please select a platform', 'error'); return; }
+            if (!keyVal) { showToast('Stream Key is required', 'error'); return; }
+            if (modalSelectedMedia.size === 0) { showToast('Select at least 1 media file', 'error'); return; }
+
+            // Construct RTMP URL
+            let rtmpUrl = '';
+            if (platformVal === 'custom') {
+                if (!customUrlVal) { showToast('Server URL required for Custom RTMP', 'error'); return; }
+                rtmpUrl = customUrlVal + keyVal;
+            } else if (PLATFORMS[platformVal]) {
+                rtmpUrl = PLATFORMS[platformVal] + keyVal;
+            }
+
+            // Logic to start stream
+            try {
+                const res = await fetch('/api/playlist/start', { 
+                    method: 'POST', 
+                    headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify({ 
+                        ids: Array.from(modalSelectedMedia), 
+                        rtmpUrl, 
+                        loop: loopVal 
+                    }) 
+                });
+                const d = await res.json();
+                if (d.error) showToast(d.error, 'error'); 
+                else { 
+                    showToast(d.message); 
+                    closeNewStreamModal();
+                    // Switch to overview to show stats
+                    switchTab('overview');
+                }
+            } catch (e) { showToast('Error starting stream', 'error'); }
+        }
+        /* --- NEW MODAL LOGIC END --- */
 
         async function checkAuth() {
             try {
@@ -541,7 +793,8 @@
         async function fetchMedia() {
             const res = await fetch('/api/videos');
             allMedia = await res.json();
-            renderMediaList();
+            // Also refresh main library list just in case
+            if (document.getElementById('media-list').innerHTML !== "") renderMediaList();
         }
 
         function renderMediaList() {
@@ -562,21 +815,7 @@
 
         function toggleSelect(id) {
             if (selectedMedia.has(id)) selectedMedia.delete(id); else selectedMedia.add(id);
-            document.getElementById('selected-count').textContent = selectedMedia.size;
-            document.getElementById('btn-start-playlist').classList.toggle('hidden', selectedMedia.size === 0);
-        }
-
-        async function startPlaylist() {
-            const rtmpUrl = document.getElementById('setting-full-rtmp').value;
-            if (!rtmpUrl) {
-                showToast('Please configure Streaming Settings first!', 'error');
-                switchTab('settings');
-                return;
-            }
-            
-            const res = await fetch('/api/playlist/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ids: Array.from(selectedMedia), rtmpUrl, loop: true }) });
-            const d = await res.json();
-            if (d.error) showToast(d.error, 'error'); else { showToast(d.message); switchTab('overview'); }
+            // Optional: You could link this to modal too, but keeping them separate for clarity
         }
 
         async function fetchSettings() {
@@ -586,6 +825,18 @@
             document.getElementById('setting-key').value = d.stream_key || '';
             document.getElementById('setting-full-rtmp').value = d.rtmp_url || '';
             document.getElementById('setting-server-url').value = d.custom_server_url || '';
+            
+            // Also pre-fill modal values if they exist
+            if(d.stream_platform && d.stream_platform !== 'custom') {
+                 // Map lowercase value back to Display Name roughly
+                 const map = { 'youtube': 'YouTube', 'facebook': 'Facebook', 'twitch': 'Twitch' };
+                 if(map[d.stream_platform]) {
+                     document.getElementById('modal-platform-display').value = map[d.stream_platform];
+                     document.getElementById('modal-platform-value').value = d.stream_platform;
+                 }
+            }
+            if(d.stream_key) document.getElementById('modal-stream-key').value = d.stream_key;
+            
             handlePlatformChange(); 
         }
 
@@ -707,8 +958,8 @@
                     if (data.success) {
                         showToast('Media dihapus');
                         if (selectedMedia.has(id)) selectedMedia.delete(id);
+                        if (modalSelectedMedia.has(id)) modalSelectedMedia.delete(id); // remove from modal too
                         fetchMedia(); updateUIInfo(); // Update storage UI
-                        document.getElementById('selected-count').textContent = selectedMedia.size;
                     } else { showToast(data.error, 'error'); }
                 } catch (e) { showToast('Error deleting media', 'error'); }
             });
