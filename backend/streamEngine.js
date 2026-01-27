@@ -57,7 +57,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       playNextSong();
 
       // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
-      // Reduced resolution to 720p, bitrate to 2000k, fps to 20
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
@@ -77,8 +76,8 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       command.outputOptions([
         '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', '-r 20', '-g 40', '-keyint_min 40', '-sc_threshold 0',
-        '-b:v 2000k', '-minrate 2000k', '-maxrate 2000k', '-bufsize 4000k', '-nal-hrd cbr',
-        '-c:a aac', '-b:a 96k', '-ar 44100', '-af aresample=async=1',
+        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k', '-nal-hrd cbr', // UPDATE: 2500k Force
+        '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
@@ -117,7 +116,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       // FIX: Added CBR (Constant Bitrate) settings to satisfy YouTube requirements
       command.outputOptions([
         '-c:v libx264',
-        '-preset veryfast', 
+        '-preset ultrafast', // UPDATE: ultrafast helps generate padding for CBR on low motion
         '-tune zerolatency',
         `-vf ${videoFilter}`,
         '-pix_fmt yuv420p',
