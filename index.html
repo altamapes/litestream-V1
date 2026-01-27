@@ -68,14 +68,19 @@
         .stream-row:hover { background-color: rgba(30, 41, 59, 0.5); }
 
         /* Admin Panel New Styles */
-        .admin-tab { @apply px-6 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-all border border-transparent hover:text-white cursor-pointer bg-slate-900 border-slate-800; }
+        .admin-tab { 
+            @apply px-8 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-all border border-transparent hover:text-white cursor-pointer bg-slate-900 border-slate-800; 
+        }
         .admin-tab.active { 
             background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); 
             color: white; 
             border-color: transparent;
             box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+            text-shadow: 0 0 5px rgba(255,255,255,0.5);
         }
-        .user-card-row { @apply bg-slate-900 border border-slate-800 rounded-2xl px-6 py-5 flex flex-col md:flex-row items-center justify-between gap-4 mb-3 transition-all hover:border-slate-700; }
+        .user-card-row { 
+            @apply bg-slate-900 border border-slate-800 rounded-2xl px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-4 mb-3 transition-all hover:border-slate-700 hover:bg-slate-900/80; 
+        }
     </style>
 </head>
 <body class="min-h-screen">
@@ -480,6 +485,44 @@
             </div>
 
             <div id="tab-users" class="tab-content space-y-6">
+                <!-- NEW: Admin Header Card (Summary) -->
+                <div class="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 relative overflow-hidden mb-8 shadow-xl">
+                    <!-- Background Glow Effect -->
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center relative z-10">
+                        <div>
+                            <div class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">Active Plan</div>
+                            <h2 class="text-2xl font-bold text-white tracking-tight" id="admin-plan-name">Loading...</h2>
+                            <p class="text-xs text-emerald-400 font-bold mt-2" id="admin-exp-date">Exp: 2026-07-24</p>
+                        </div>
+                        
+                        <!-- Storage Bar -->
+                        <div>
+                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-3">
+                                <span>Storage</span>
+                                <span id="admin-storage-text" class="text-slate-300">0 / 0 MB</span>
+                            </div>
+                            <div class="w-full bg-slate-800 rounded-full h-1.5 relative overflow-hidden">
+                                <div id="admin-storage-bar" class="bg-indigo-500 h-1.5 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.6)] absolute top-0 left-0 transition-all duration-1000" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Time Bar -->
+                        <div>
+                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-3">
+                                <span>Time Used</span>
+                                <span id="admin-time-text" class="text-slate-300">0 / 24 H</span>
+                            </div>
+                            <div class="w-full bg-slate-800 rounded-full h-1.5 relative overflow-hidden">
+                                <div id="admin-time-bar" class="bg-emerald-500 h-1.5 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.6)] absolute top-0 left-0 transition-all duration-1000" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 class="text-2xl font-bold">Admin Panel</h2>
+
                 <!-- User Filter Tabs -->
                 <div class="flex flex-wrap gap-2 mb-8" id="admin-tabs-container">
                     <button onclick="filterUsers('all')" class="admin-tab active" id="tab-user-all">ALL USERS</button>
@@ -490,7 +533,7 @@
                 </div>
 
                 <!-- Admin Card Header -->
-                <div class="hidden md:flex justify-between px-6 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                <div class="hidden md:flex justify-between px-8 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                     <div class="w-1/3">User</div>
                     <div class="w-1/3 text-center">Status / Expire</div>
                     <div class="w-1/3 text-right">Actions</div>
@@ -720,6 +763,7 @@
             setView('main-app');
             document.getElementById('login-view').classList.add('hidden');
             updateUIInfo();
+            updateAdminHeader(); // New function for header card
             if (currentUser.role === 'admin') document.getElementById('nav-users').classList.remove('hidden');
             if (currentUser) {
                 document.getElementById('profile-username').value = currentUser.username;
@@ -741,6 +785,29 @@
             
             document.getElementById('dash-disk-val').innerHTML = `${usedGB} GB <span class="text-slate-500 text-sm">/ ${maxGB} GB</span>`;
             document.getElementById('dash-disk-bar').style.width = Math.min((usedMB / maxMB * 100), 100) + '%';
+        }
+
+        // New function to update the Admin Summary Card
+        function updateAdminHeader() {
+            if(!currentUser) return;
+            
+            // Populate Plan Name
+            document.getElementById('admin-plan-name').textContent = currentUser.plan_name || 'Standard Plan';
+            
+            // Update Storage Bar in Header
+            const usedMB = (currentUser.storage_used / (1024 * 1024)).toFixed(1);
+            const maxMB = currentUser.max_storage_mb;
+            const percentageStorage = Math.min((usedMB / maxMB * 100), 100);
+            document.getElementById('admin-storage-text').textContent = `${usedMB} / ${maxMB} MB`;
+            document.getElementById('admin-storage-bar').style.width = percentageStorage + '%';
+            
+            // Update Time Bar in Header
+            const usedHours = (currentUser.usage_seconds / 3600).toFixed(1);
+            // Assuming 24H daily limit for admin or from plan
+            const maxHours = 24; 
+            const percentageTime = Math.min((usedHours / maxHours * 100), 100);
+            document.getElementById('admin-time-text').textContent = `${usedHours} / ${maxHours} H`;
+            document.getElementById('admin-time-bar').style.width = percentageTime + '%';
         }
 
         function startMockStats() {
@@ -932,31 +999,33 @@
 
             container.innerHTML = users.map(u => {
                 // Mock Expiry calculation just for visual demo since DB doesn't have it explicitly
+                // In production, you'd fetch this from DB 'created_at' + plan duration
                 const today = new Date();
                 today.setDate(today.getDate() + 30); 
                 const mockDate = today.toISOString().split('T')[0];
+                const planNameUpper = (u.plan_name || 'Standard').toUpperCase();
                 
                 return `
                 <div class="user-card-row">
                     <!-- Left: User Info -->
                     <div class="flex flex-col md:w-1/3">
-                        <span class="text-sm font-bold text-white">${u.username}</span>
-                        <span class="text-[10px] font-bold text-indigo-400 uppercase mt-0.5 tracking-wider">${u.plan_name || 'Standard Plan'}</span>
+                        <span class="text-sm font-bold text-white tracking-wide">${u.username}</span>
+                        <span class="text-[10px] font-bold text-indigo-400 uppercase mt-0.5 tracking-wider">${planNameUpper} STREAM</span>
                     </div>
 
                     <!-- Center: Status -->
                     <div class="md:w-1/3 text-center">
-                        <span class="inline-block px-3 py-1 rounded-md bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
+                        <span class="text-xs font-bold text-emerald-400">
                             Exp: ${mockDate}
                         </span>
                     </div>
 
                     <!-- Right: Actions -->
                     <div class="md:w-1/3 flex justify-end gap-2">
-                        <button onclick="alert('Manage ${u.username}')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase shadow-lg shadow-indigo-600/20 transition-all">
+                        <button onclick="alert('Manage ${u.username}')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-[10px] font-bold uppercase shadow-lg shadow-indigo-600/30 transition-all tracking-wider">
                             MANAGE
                         </button>
-                        <button onclick="alert('Delete ${u.username}')" class="bg-rose-600 hover:bg-rose-500 text-white w-8 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-rose-600/20 transition-all">
+                        <button onclick="alert('Delete ${u.username}')" class="bg-rose-600 hover:bg-rose-500 text-white w-9 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-rose-600/30 transition-all">
                             <i class="fas fa-trash text-xs"></i>
                         </button>
                     </div>
@@ -1044,6 +1113,8 @@
                 const limitSecs = limitHrs * 3600;
                 const usedSecs = limitSecs - data.usage_remaining;
                 currentUser.usage_seconds = usedSecs; 
+                // Auto update admin header if on admin tab
+                updateAdminHeader();
             }
         });
         
@@ -1103,7 +1174,7 @@
             try {
                 const res = await fetch('/api/videos/upload', { method: 'POST', body: formData });
                 const data = await res.json();
-                if (data.success) { showToast('Upload berhasil!'); fetchMedia(); updateUIInfo(); } 
+                if (data.success) { showToast('Upload berhasil!'); fetchMedia(); updateUIInfo(); updateAdminHeader(); } 
                 else { showToast(data.error || 'Upload failed', 'error'); }
             } catch (err) { showToast('Upload error', 'error'); }
             input.value = '';
@@ -1118,7 +1189,7 @@
                         showToast('Media dihapus');
                         if (selectedMedia.has(id)) selectedMedia.delete(id);
                         if (modalSelectedMedia.has(id)) modalSelectedMedia.delete(id); 
-                        fetchMedia(); updateUIInfo();
+                        fetchMedia(); updateUIInfo(); updateAdminHeader();
                     } else { showToast(data.error, 'error'); }
                 } catch (e) { showToast('Error deleting media', 'error'); }
             });
