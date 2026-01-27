@@ -57,15 +57,17 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       playNextSong();
 
       // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
+      // FIX: Add 'noise' filter to force encoder to generate bits even on static images
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
+        'noise=alls=1:allf=t+u', // Micro-noise to prevent bitrate drop
         'format=yuv420p'
       ].join(',');
 
       // Input 1: Image/Color
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
-        command.input('color=c=black:s=1280x720:r=20').inputOptions(['-f lavfi', '-re']);
+        command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
       } else {
         command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 1', '-re']); 
       }
@@ -75,8 +77,11 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       command.outputOptions([
         '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
-        '-c:v libx264', '-preset ultrafast', '-tune zerolatency', '-r 20', '-g 40', '-keyint_min 40', '-sc_threshold 0',
-        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k', '-nal-hrd cbr', // UPDATE: 2500k Force
+        '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
+        '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', // 25 FPS Standard
+        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', 
+        '-bufsize 2500k', // Tighter buffer to force CBR
+        '-nal-hrd cbr', 
         '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
@@ -116,17 +121,17 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       // FIX: Added CBR (Constant Bitrate) settings to satisfy YouTube requirements
       command.outputOptions([
         '-c:v libx264',
-        '-preset ultrafast', // UPDATE: ultrafast helps generate padding for CBR on low motion
+        '-preset ultrafast', 
         '-tune zerolatency',
         `-vf ${videoFilter}`,
         '-pix_fmt yuv420p',
         '-r 30',
         '-g 60',
         '-b:v 2500k',       // Target Bitrate
-        '-minrate 2500k',   // FORCE Minimum Bitrate (Fixes low bitrate error)
+        '-minrate 2500k',   // FORCE Minimum Bitrate
         '-maxrate 2500k',   // FORCE Maximum Bitrate
-        '-bufsize 5000k',   // Buffer
-        '-nal-hrd cbr',     // Enforce CBR compliance for libx264
+        '-bufsize 2500k',   // Tighter Buffer (was 5000k) to prevent dipping
+        '-nal-hrd cbr',     // Enforce CBR compliance
         '-c:a aac',
         '-ar 44100',
         '-b:a 128k',
