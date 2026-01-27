@@ -56,14 +56,18 @@ const initDB = () => {
         if (!hasReset) db.run("ALTER TABLE users ADD COLUMN last_usage_reset TEXT");
       });
 
-      // 3. Tabel Videos dengan support LOCK
-      db.run(`CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, filename TEXT NOT NULL, path TEXT NOT NULL, size INTEGER, type TEXT DEFAULT 'video', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_locked INTEGER DEFAULT 0)`);
+      // 3. Tabel Videos dengan support LOCK dan THUMBNAIL
+      db.run(`CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, filename TEXT NOT NULL, path TEXT NOT NULL, size INTEGER, type TEXT DEFAULT 'video', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_locked INTEGER DEFAULT 0, thumbnail TEXT)`);
       
-      // Migrasi kolom is_locked
+      // Migrasi kolom is_locked dan thumbnail
       db.all("PRAGMA table_info(videos)", (err, columns) => {
         if (err || !columns) return;
+        
         const hasLock = columns.some(c => c.name === 'is_locked');
         if (!hasLock) db.run("ALTER TABLE videos ADD COLUMN is_locked INTEGER DEFAULT 0");
+
+        const hasThumb = columns.some(c => c.name === 'thumbnail');
+        if (!hasThumb) db.run("ALTER TABLE videos ADD COLUMN thumbnail TEXT");
       });
 
       db.run(`CREATE TABLE IF NOT EXISTS stream_settings (key TEXT PRIMARY KEY, value TEXT)`);
@@ -107,7 +111,7 @@ const initDB = () => {
 };
 
 const getVideos = (userId) => new Promise((res, rej) => db.all("SELECT * FROM videos WHERE user_id = ? ORDER BY created_at DESC", [userId], (err, rows) => err ? rej(err) : res(rows)));
-const saveVideo = (data) => new Promise((res, rej) => db.run("INSERT INTO videos (user_id, filename, path, size, type) VALUES (?, ?, ?, ?, ?)", [data.user_id, data.filename, data.path, data.size, data.type || 'video'], function(err) { err ? rej(err) : res(this.lastID); }));
+const saveVideo = (data) => new Promise((res, rej) => db.run("INSERT INTO videos (user_id, filename, path, size, type, thumbnail) VALUES (?, ?, ?, ?, ?, ?)", [data.user_id, data.filename, data.path, data.size, data.type || 'video', data.thumbnail], function(err) { err ? rej(err) : res(this.lastID); }));
 const deleteVideo = (id) => new Promise((res, rej) => db.run("DELETE FROM videos WHERE id = ?", [id], (err) => err ? rej(err) : res()));
 
 const toggleVideoLock = (id, userId) => new Promise((res, rej) => {

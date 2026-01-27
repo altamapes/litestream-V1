@@ -582,6 +582,18 @@
             renderModalMediaList();
         }
 
+        function getMediaPreview(v, sizeClass = 'w-12 h-12') {
+            if (v.type === 'video') {
+                if (v.thumbnail) return `<img src="/backend/uploads/${v.thumbnail}" class="${sizeClass} rounded-lg object-cover bg-black border border-slate-700">`;
+                return `<div class="${sizeClass} rounded-lg bg-slate-800 flex items-center justify-center border border-slate-700"><i class="fas fa-video text-slate-500"></i></div>`;
+            }
+            if (v.type === 'image') {
+                return `<img src="/backend/uploads/${v.filename}" class="${sizeClass} rounded-lg object-cover bg-black border border-slate-700">`;
+            }
+            // Audio
+            return `<div class="${sizeClass} rounded-lg bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20"><i class="fas fa-music text-indigo-400"></i></div>`;
+        }
+
         function renderModalMediaList() {
             const filtered = allMedia.filter(m => m.type === currentModalMediaTab);
             const container = document.getElementById('modal-media-list');
@@ -596,11 +608,18 @@
 
             container.innerHTML = filtered.map(v => `
                 <div onclick="toggleModalMediaSelect(${v.id})" class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors ${modalSelectedMedia.has(v.id) ? 'bg-indigo-900/20 border border-indigo-500/30' : ''}">
-                    <div class="w-4 h-4 rounded border ${modalSelectedMedia.has(v.id) ? 'bg-indigo-500 border-indigo-500 flex items-center justify-center' : 'border-slate-600'}">
+                    <div class="w-8 h-8 flex-shrink-0">
+                        ${getMediaPreview(v, 'w-8 h-8')}
+                    </div>
+                    
+                    <div class="flex-1 min-w-0">
+                        <div class="truncate text-[10px] font-bold text-slate-300">${v.filename}</div>
+                        <div class="text-[9px] text-slate-500 uppercase">${v.type}</div>
+                    </div>
+                    
+                    <div class="w-4 h-4 rounded border flex-shrink-0 ${modalSelectedMedia.has(v.id) ? 'bg-indigo-500 border-indigo-500 flex items-center justify-center' : 'border-slate-600'}">
                         ${modalSelectedMedia.has(v.id) ? '<i class="fas fa-check text-[8px] text-white"></i>' : ''}
                     </div>
-                    <div class="truncate text-[10px] font-bold text-slate-300 flex-1">${v.filename}</div>
-                    <div class="text-[9px] text-slate-500 uppercase">${v.type}</div>
                 </div>
             `).join('');
         }
@@ -780,9 +799,15 @@
         function renderMediaList() {
             const filtered = allMedia.filter(m => m.type === (window.currentMediaTab || 'video'));
             document.getElementById('media-list').innerHTML = filtered.map(v => `
-                <div class="bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50 flex items-center gap-4 group">
-                    <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500 rounded focus:ring-0">
-                    <div class="flex-1 truncate text-xs font-bold text-slate-300">${v.filename}</div>
+                <div class="bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50 flex items-center gap-4 group hover:bg-slate-800 transition-colors">
+                    <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500 rounded focus:ring-0 flex-shrink-0">
+                    
+                    ${getMediaPreview(v, 'w-16 h-16')}
+
+                    <div class="flex-1 min-w-0">
+                        <div class="truncate text-xs font-bold text-slate-300 mb-1" title="${v.filename}">${v.filename}</div>
+                        <div class="text-[10px] text-slate-500 uppercase">${v.type} • ${(v.size/1024/1024).toFixed(1)} MB</div>
+                    </div>
                     
                     <button onclick="toggleLock(${v.id})" class="transition-all ${v.is_locked ? 'text-amber-400' : 'text-slate-600 hover:text-amber-400'}" title="${v.is_locked ? 'Unlock Media' : 'Lock Media'}">
                         <i class="fas ${v.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i>

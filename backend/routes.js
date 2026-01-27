@@ -4,7 +4,8 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const bcrypt = require('bcryptjs'); 
+const bcrypt = require('bcryptjs');
+const ffmpeg = require('fluent-ffmpeg'); // ADDED
 const { getVideos, saveVideo, deleteVideo, toggleVideoLock, db } = require('./database');
 const { startStream, stopStream, isStreaming, getActiveStreams } = require('./streamEngine');
 
@@ -106,9 +107,29 @@ router.post('/videos/upload', checkStorageQuota, upload.single('video'), async (
   const file = req.file;
   const ext = path.extname(file.filename).toLowerCase();
   let type = (ext === '.mp3') ? 'audio' : (['.jpg','.png','.jpeg'].includes(ext) ? 'image' : 'video');
-  const id = await saveVideo({ user_id: userId, filename: file.filename, path: file.path, size: file.size, type });
+  
+  // START THUMBNAIL GENERATION
+  let thumbnail = null;
+  if (type === 'video') {
+      const thumbName = `thumb_${path.basename(file.filename, ext)}.png`;
+      try {
+          await new Promise((resolve) => {
+              ffmpeg(file.path)
+                .screenshots({
+                    timestamps: ['10%'], // Take snapshot at 10% duration
+                    filename: thumbName,
+                    folder: path.join(__dirname, 'uploads'),
+                    size: '320x180'
+                })
+                .on('end', () => { thumbnail = thumbName; resolve(); })
+                .on('error', (e) => { console.error('Thumb Gen Error:', e); resolve(); });
+          });
+      } catch (e) { console.error('Thumb Gen Exception:', e); }
+  }
+
+  const id = await saveVideo({ user_id: userId, filename: file.filename, path: file.path, size: file.size, type, thumbnail });
   db.run("UPDATE users SET storage_used = storage_used + ? WHERE id = ?", [file.size, userId]);
-  res.json({ success: true, id, type });
+  res.json({ success: true, id, type, thumbnail });
 });
 
 router.put('/videos/:id/lock', async (req, res) => {
@@ -122,12 +143,17 @@ router.put('/videos/:id/lock', async (req, res) => {
 
 router.delete('/videos/:id', async (req, res) => {
   const userId = req.session.user.id;
-  db.get("SELECT path, size, is_locked FROM videos WHERE id = ? AND user_id = ?", [req.params.id, userId], (err, row) => {
+  db.get("SELECT path, size, is_locked, thumbnail FROM videos WHERE id = ? AND user_id = ?", [req.params.id, userId], (err, row) => {
     if (row) {
       if (row.is_locked) {
           return res.status(403).json({ error: "File terkunci! Buka gembok dulu." });
       }
       if (fs.existsSync(row.path)) fs.unlinkSync(row.path);
+      // Delete thumbnail if exists
+      if (row.thumbnail) {
+          const thumbPath = path.join(__dirname, 'uploads', row.thumbnail);
+          if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath);
+      }
       db.run("UPDATE users SET storage_used = storage_used - ? WHERE id = ?", [row.size, userId]);
       deleteVideo(req.params.id).then(() => res.json({ success: true }));
     } else res.status(404).json({ error: "File not found" });
