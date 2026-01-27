@@ -96,20 +96,22 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       command.input(currentPlaylistPath).inputOptions(videoInputOpts);
       
-      // PERBAIKAN: Menggunakan transcoding (libx264 + aac) alih-alih copy
-      // Ini memastikan kompatibilitas RTMP meski input MP4 berbeda-beda codec.
-      // Setting disesuaikan untuk VPS Low-End (720p, Ultrafast preset).
+      // PERBAIKAN: 
+      // 1. pix_fmt yuv420p: Wajib untuk kompatibilitas player
+      // 2. Preset veryfast: Sedikit lebih stabil daripada ultrafast untuk video
+      // 3. Audio AAC: Standar RTMP
       command.outputOptions([
         '-c:v libx264',
-        '-preset ultrafast', 
+        '-preset veryfast', 
         '-tune zerolatency',
         '-vf scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
+        '-pix_fmt yuv420p',   // CRITICAL FIX: Ensure color space is standard
         '-r 30',              // Stabil di 30 FPS
-        '-g 60',              // Keyframe interval 2 detik (Wajib untuk YouTube/FB)
-        '-b:v 2500k',         // Bitrate Video
+        '-g 60',              // Keyframe interval 2 detik
+        '-b:v 2500k',         
         '-maxrate 2500k',
         '-bufsize 5000k',
-        '-c:a aac',           // Encode audio ke AAC (Standar RTMP)
+        '-c:a aac',           
         '-ar 44100',
         '-b:a 128k',
         '-f flv',
@@ -120,6 +122,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     // --- EVENTS ---
     command
       .on('start', (commandLine) => {
+        console.log(`[FFmpeg] Stream ${streamId} started with command: ${commandLine}`);
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
@@ -168,18 +171,21 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             });
         }
       })
-      .on('error', (err) => {
+      .on('error', (err, stdout, stderr) => {
         if (!hasStarted) {
-            // Reject promise if startup fails
+            console.error(`[FFmpeg Error Start] ${err.message}`);
+            if (stderr) console.error(`[FFmpeg Stderr] ${stderr}`);
             reject(new Error(err.message));
-        }
-        
-        if (!err.message.includes('SIGKILL') && hasStarted) {
-            console.error(`Stream ${streamId} Error:`, err.message);
+        } else {
+            if (!err.message.includes('SIGKILL')) {
+                console.error(`[FFmpeg Error Stream ${streamId}] ${err.message}`);
+                if (stderr) console.error(`[FFmpeg Stderr] ${stderr}`);
+            }
         }
         cleanupStream(streamId);
       })
       .on('end', () => {
+        console.log(`[FFmpeg] Stream ${streamId} ended cleanly.`);
         if (global.io) global.io.emit('log', { type: 'end', message: `Stream ${streamId} Ended.`, streamId });
         cleanupStream(streamId);
       });
@@ -203,6 +209,7 @@ const cleanupStream = (streamId) => {
 const stopStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (stream) {
+    console.log(`[Stream] Stopping ${streamId}...`);
     if (stream.activeInputStream) {
         try { stream.activeInputStream.end(); } catch(e) {}
     }
