@@ -3,6 +3,31 @@
 
 Aplikasi streaming ringan untuk VPS spesifikasi rendah (1 Core, 1GB RAM).
 
+## 🔄 Alur Kerja Pengembangan (Workflow)
+
+Ikuti alur ini agar aplikasi Anda aman dan mudah di-update:
+
+1.  **AI Studio (Coding)**
+    *   Minta fitur baru atau perbaikan bug di sini.
+    *   Copy kode yang diberikan AI.
+
+2.  **GitHub (Penyimpanan)**
+    *   Paste kode ke file di komputer/repo GitHub Anda.
+    *   Lakukan Commit & Push:
+        ```bash
+        git add .
+        git commit -m "Update fitur X"
+        git push origin main
+        ```
+
+3.  **VPS (Production)**
+    *   Masuk ke VPS, lalu jalankan perintah update otomatis:
+        ```bash
+        ./deploy.sh
+        ```
+
+---
+
 ## ⚠️ SOLUSI ERROR "Refused to Connect" / "Module Not Found"
 
 Jika Anda melihat error `Cannot find module`, jalankan perintah ini di terminal VPS Anda:
@@ -39,12 +64,3 @@ sudo npm install pm2 -g
 - **Ultra-Low CPU**: Menggunakan mode `-c copy` untuk video.
 - **Audio-to-Video Engine**: Streaming MP3 dengan background gambar (preset ultrafast).
 - **SQLite Database**: Ringan & tanpa setup rumit.
-
-## Cara Update Aplikasi
-Untuk mengambil pembaruan terbaru dari repository dan merestart layanan:
-
-```bash
-cd litestream
-git pull origin main
-pm2 restart litestream
-```
