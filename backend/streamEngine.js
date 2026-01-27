@@ -83,37 +83,52 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ]);
 
     } 
-    // --- VIDEO HANDLING (UPDATED) ---
+    // --- VIDEO HANDLING (FIXED & IMPROVED) ---
     else {
-      const uniqueId = streamId;
-      currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
+      // Standardize Video Filter: Scale to 720p, Pad to 16:9, Force Square Pixels (setsar=1)
+      const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1';
       
-      const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
-      fs.writeFileSync(currentPlaylistPath, playlistContent);
+      // LOGIC BRANCH: Single File vs Playlist
+      if (files.length === 1) {
+          // --- SINGLE FILE MODE (More Stable) ---
+          const singleFile = files[0];
+          command.input(singleFile);
+          
+          const inputOpts = ['-re']; // Read at native frame rate
+          if (loop) inputOpts.unshift('-stream_loop', '-1');
+          command.inputOptions(inputOpts);
 
-      const videoInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
-      if (loop) videoInputOpts.unshift('-stream_loop', '-1');
+      } else {
+          // --- PLAYLIST MODE (Using Concat Demuxer) ---
+          const uniqueId = streamId;
+          currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
+          
+          // Escape single quotes for ffmpeg concat file
+          const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
+          fs.writeFileSync(currentPlaylistPath, playlistContent);
 
-      command.input(currentPlaylistPath).inputOptions(videoInputOpts);
+          const videoInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
+          if (loop) videoInputOpts.unshift('-stream_loop', '-1');
+
+          command.input(currentPlaylistPath).inputOptions(videoInputOpts);
+      }
       
-      // PERBAIKAN: 
-      // 1. pix_fmt yuv420p: Wajib untuk kompatibilitas player
-      // 2. Preset veryfast: Sedikit lebih stabil daripada ultrafast untuk video
-      // 3. Audio AAC: Standar RTMP
+      // UNIVERSAL OUTPUT OPTIONS (Transcoding)
       command.outputOptions([
         '-c:v libx264',
         '-preset veryfast', 
         '-tune zerolatency',
-        '-vf scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-        '-pix_fmt yuv420p',   // CRITICAL FIX: Ensure color space is standard
-        '-r 30',              // Stabil di 30 FPS
-        '-g 60',              // Keyframe interval 2 detik
+        `-vf ${videoFilter}`, // Apply standardized scaling
+        '-pix_fmt yuv420p',   // Required for web players
+        '-r 30',              // Stabilize framerate
+        '-g 60',              // Keyframe interval (2s)
         '-b:v 2500k',         
         '-maxrate 2500k',
         '-bufsize 5000k',
-        '-c:a aac',           
+        '-c:a aac',           // Re-encode audio to AAC
         '-ar 44100',
         '-b:a 128k',
+        '-bsf:a aac_adtstoasc', // CRITICAL: Fixes MP4->FLV audio bitstream issues
         '-f flv',
         '-flvflags no_duration_filesize'
       ]);
@@ -122,7 +137,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     // --- EVENTS ---
     command
       .on('start', (commandLine) => {
-        console.log(`[FFmpeg] Stream ${streamId} started with command: ${commandLine}`);
+        console.log(`[FFmpeg] Stream ${streamId} started`);
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
@@ -179,7 +194,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         } else {
             if (!err.message.includes('SIGKILL')) {
                 console.error(`[FFmpeg Error Stream ${streamId}] ${err.message}`);
-                if (stderr) console.error(`[FFmpeg Stderr] ${stderr}`);
             }
         }
         cleanupStream(streamId);
