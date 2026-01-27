@@ -67,7 +67,7 @@
         .stream-row { transition: background-color 0.2s; }
         .stream-row:hover { background-color: rgba(30, 41, 59, 0.5); }
 
-        /* Admin Panel New Styles - Matches Media Library Style */
+        /* Admin Panel Styles - Standardized capsule tabs */
         .admin-tab { 
             @apply px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-400 transition-all hover:text-white cursor-pointer whitespace-nowrap; 
         }
@@ -84,6 +84,7 @@
 </head>
 <body class="min-h-screen">
 
+    <!-- Landing View -->
     <div id="landing-view" class="view-section active-view relative overflow-hidden min-h-screen">
         <div class="absolute inset-0 hero-bg -z-10"></div>
         <nav class="fixed top-0 left-0 right-0 z-50 px-6 py-6 lg:px-20 flex justify-between items-center glass border-b border-slate-800">
@@ -117,6 +118,7 @@
         </footer>
     </div>
 
+    <!-- Auth Modal -->
     <div id="login-view" class="hidden fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-xl flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-[2.5rem] p-8 space-y-8 shadow-2xl relative">
             <button onclick="hideAuth()" class="absolute top-6 right-6 text-slate-500 hover:text-white"><i class="fas fa-times"></i></button>
@@ -136,82 +138,53 @@
         </div>
     </div>
 
-    <!-- NEW STREAM MODAL (Fixed Visibility) -->
+    <!-- New Stream Modal -->
     <div id="new-stream-modal" class="hidden fixed inset-0 z-[150] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
         <div id="new-stream-card" class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl relative modal-card flex flex-col max-h-[90vh]">
-            
-            <!-- Header -->
             <div class="flex justify-between items-center p-6 border-b border-slate-800">
                 <h2 class="text-xl font-bold text-white">New Stream</h2>
-                <button onclick="closeNewStreamModal()" class="text-slate-500 hover:text-white transition-colors">
-                    <i class="fas fa-times"></i>
-                </button>
+                <button onclick="closeNewStreamModal()" class="text-slate-500 hover:text-white transition-colors"><i class="fas fa-times"></i></button>
             </div>
-
             <div class="p-6 overflow-y-auto space-y-5 custom-scrollbar flex-1">
-                
-                <!-- Stream Info -->
                 <div class="space-y-3">
                     <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stream Details</label>
                     <div class="relative">
                         <i class="fas fa-heading absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                        <input type="text" id="modal-stream-title" placeholder="Stream Title (e.g., Chill Vibes Radio)" 
-                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600">
+                        <input type="text" id="modal-stream-title" placeholder="Stream Title" class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500">
                     </div>
                     <div class="relative">
                         <i class="fas fa-align-left absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                        <textarea id="modal-stream-desc" placeholder="Stream Description..." rows="2"
-                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600 resize-none"></textarea>
+                        <textarea id="modal-stream-desc" placeholder="Stream Description..." rows="2" class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 resize-none"></textarea>
                     </div>
                 </div>
-
-                <!-- Platform Selection -->
                 <div>
                      <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Destination</label>
                     <div class="relative">
                         <div class="flex gap-2">
                             <div class="relative flex-1">
                                 <i class="fas fa-link absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                                <input type="text" id="modal-platform-display" readonly placeholder="Select Platform" 
-                                    class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs font-bold text-white outline-none cursor-not-allowed opacity-70">
+                                <input type="text" id="modal-platform-display" readonly placeholder="Select Platform" class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs font-bold text-white outline-none cursor-not-allowed opacity-70">
                             </div>
-                            <button onclick="togglePlatformDropdown()" class="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-indigo-400 w-12 rounded-xl flex items-center justify-center transition-all">
-                                <i class="fas fa-list"></i>
-                            </button>
+                            <button onclick="togglePlatformDropdown()" class="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-indigo-400 w-12 rounded-xl flex items-center justify-center transition-all"><i class="fas fa-list"></i></button>
                         </div>
-
                         <div id="platform-dropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
-                            <button onclick="selectModalPlatform('YouTube', 'youtube')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                                <i class="fab fa-youtube text-red-500 w-4"></i> YouTube
-                            </button>
-                            <button onclick="selectModalPlatform('Facebook', 'facebook')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                                <i class="fab fa-facebook text-blue-500 w-4"></i> Facebook
-                            </button>
-                            <button onclick="selectModalPlatform('Twitch', 'twitch')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                                <i class="fab fa-twitch text-purple-500 w-4"></i> Twitch
-                            </button>
+                            <button onclick="selectModalPlatform('YouTube', 'youtube')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3"><i class="fab fa-youtube text-red-500 w-4"></i> YouTube</button>
+                            <button onclick="selectModalPlatform('Facebook', 'facebook')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3"><i class="fab fa-facebook text-blue-500 w-4"></i> Facebook</button>
+                            <button onclick="selectModalPlatform('Twitch', 'twitch')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3"><i class="fab fa-twitch text-purple-500 w-4"></i> Twitch</button>
                             <div class="h-px bg-slate-700 my-1"></div>
-                            <button onclick="selectModalPlatform('Custom RTMP', 'custom')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3">
-                                <i class="fas fa-server text-slate-400 w-4"></i> Custom RTMP
-                            </button>
+                            <button onclick="selectModalPlatform('Custom RTMP', 'custom')" class="w-full text-left px-4 py-3 text-xs font-bold text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-3"><i class="fas fa-server text-slate-400 w-4"></i> Custom RTMP</button>
                         </div>
                     </div>
-                    
                     <input type="hidden" id="modal-platform-value">
                     <div id="modal-custom-url-group" class="hidden relative mt-2">
                         <i class="fas fa-globe absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                        <input type="text" id="modal-custom-url" placeholder="rtmp://server/app" 
-                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500">
+                        <input type="text" id="modal-custom-url" placeholder="rtmp://server/app" class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500">
                     </div>
-
                     <div class="relative mt-2">
                         <i class="fas fa-key absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                        <input type="password" id="modal-stream-key" placeholder="Stream Key" 
-                            class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 font-mono">
+                        <input type="password" id="modal-stream-key" placeholder="Stream Key" class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-xs text-white outline-none focus:border-indigo-500 font-mono">
                     </div>
                 </div>
-
-                <!-- Media Selection -->
                 <div>
                      <div class="flex justify-between items-center mb-2">
                         <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Playlist</label>
@@ -223,37 +196,26 @@
                             </div>
                         </div>
                     </div>
-
                     <div class="flex gap-2 mb-2">
                         <button onclick="switchModalMediaTab('video')" id="mmt-video" class="modal-media-tab active px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">VIDEOS</button>
                         <button onclick="switchModalMediaTab('audio')" id="mmt-audio" class="modal-media-tab px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">AUDIOS</button>
                         <button onclick="switchModalMediaTab('image')" id="mmt-image" class="modal-media-tab px-3 py-1.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 hover:text-white border border-slate-700">IMAGES</button>
                     </div>
-                    
-                    <div id="modal-media-list" class="bg-slate-950 border border-slate-800 rounded-xl p-4 h-32 overflow-y-auto custom-scrollbar">
-                        <!-- Content injected via JS -->
-                    </div>
+                    <div id="modal-media-list" class="bg-slate-950 border border-slate-800 rounded-xl p-4 h-32 overflow-y-auto custom-scrollbar"></div>
                     <p class="text-[10px] text-slate-500 mt-2 text-right">Selected: <span id="modal-selected-count" class="text-indigo-400">0</span></p>
                 </div>
-
             </div>
-
-            <!-- Footer Action -->
             <div class="p-6 pt-0 border-t border-transparent">
-                <button onclick="goLiveFromModal()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition-all">
-                    <i class="fas fa-play text-xs"></i> Go Live
-                </button>
+                <button onclick="goLiveFromModal()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 transition-all"><i class="fas fa-play text-xs"></i> Go Live</button>
             </div>
         </div>
     </div>
 
-    <!-- CUSTOM CONFIRM MODAL -->
+    <!-- Confirm Modal -->
     <div id="custom-confirm-modal" class="hidden fixed inset-0 z-[160] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative transform transition-all scale-100">
             <div class="text-center mb-6">
-                <div class="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <i class="fas fa-exclamation-triangle text-2xl text-rose-500"></i>
-                </div>
+                <div class="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-4"><i class="fas fa-exclamation-triangle text-2xl text-rose-500"></i></div>
                 <h3 class="text-lg font-bold text-white mb-2">Konfirmasi Tindakan</h3>
                 <p id="confirm-message" class="text-sm text-slate-400">Apakah Anda yakin?</p>
             </div>
@@ -266,7 +228,9 @@
 
     <div id="toast-container" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[170] flex flex-col gap-2 w-full max-w-xs pointer-events-none"></div>
 
+    <!-- Main App -->
     <div id="main-app" class="view-section flex flex-col md:flex-row min-h-screen">
+        <!-- Sidebar -->
         <aside class="hidden md:flex w-64 bg-slate-900 border-r border-slate-800 flex-col py-8 sticky top-0 h-screen">
             <div class="flex items-center gap-3 px-8 mb-12">
                 <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><i class="fas fa-bolt text-white text-sm"></i></div>
@@ -284,105 +248,60 @@
             </div>
         </aside>
 
+        <!-- Main Content -->
         <main class="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
             <header class="flex justify-between items-center mb-8">
                 <div><h2 class="text-xl font-bold md:hidden">LiteStream</h2><p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest hidden md:block">Streaming Dashboard</p></div>
                 <div class="flex items-center gap-4">
-                     <!-- Top Right User/Status Area -->
                     <div class="px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 flex items-center gap-2">
                         <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-500"></span><span id="status-label" class="text-[10px] font-bold text-slate-400 uppercase">Offline</span>
                     </div>
                 </div>
             </header>
 
-            <!-- OVERVIEW TAB (Dashboard Style) -->
+            <!-- Overview Tab -->
             <div id="tab-overview" class="tab-content active space-y-6">
-                
-                <!-- 1. Stats Cards Row -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <!-- Active Streams Card -->
                     <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
                         <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Streams</p>
-                                <h3 id="dash-active-count" class="text-3xl font-bold text-white mt-1">0</h3>
-                            </div>
-                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
-                                <i class="fas fa-broadcast-tower"></i>
-                            </div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Streams</p><h3 id="dash-active-count" class="text-3xl font-bold text-white mt-1">0</h3></div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 transition-all group-hover:bg-indigo-500/20 group-hover:text-indigo-400"><i class="fas fa-broadcast-tower"></i></div>
                         </div>
-                        <div class="w-full bg-slate-700 rounded-full h-1.5">
-                            <div id="dash-active-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div>
-                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="dash-active-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div></div>
                     </div>
-
-                    <!-- CPU Usage Card -->
                     <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
                         <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CPU Usage</p>
-                                <h3 id="dash-cpu-val" class="text-3xl font-bold text-white mt-1">0%</h3>
-                            </div>
-                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
-                                <i class="fas fa-microchip"></i>
-                            </div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CPU Usage</p><h3 id="dash-cpu-val" class="text-3xl font-bold text-white mt-1">0%</h3></div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 transition-all group-hover:bg-indigo-500/20 group-hover:text-indigo-400"><i class="fas fa-microchip"></i></div>
                         </div>
-                        <div class="w-full bg-slate-700 rounded-full h-1.5">
-                            <div id="dash-cpu-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-1000" style="width: 0%"></div>
-                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="dash-cpu-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
                     </div>
-
-                    <!-- Memory Usage Card -->
                     <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
                         <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Memory</p>
-                                <h3 id="dash-mem-val" class="text-xl font-bold text-white mt-2">0 MB <span class="text-slate-500 text-sm">/ 1 GB</span></h3>
-                            </div>
-                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
-                                <i class="fas fa-memory"></i>
-                            </div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Memory</p><h3 id="dash-mem-val" class="text-xl font-bold text-white mt-2">0 MB <span class="text-slate-500 text-sm">/ 1 GB</span></h3></div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 transition-all group-hover:bg-indigo-500/20 group-hover:text-indigo-400"><i class="fas fa-memory"></i></div>
                         </div>
-                        <div class="w-full bg-slate-700 rounded-full h-1.5">
-                            <div id="dash-mem-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div>
-                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="dash-mem-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div></div>
                     </div>
-
-                    <!-- Disk Usage Card -->
                     <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
                         <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Disk Usage</p>
-                                <h3 id="dash-disk-val" class="text-xl font-bold text-white mt-2">0 GB <span class="text-slate-500 text-sm" id="dash-disk-max">/ 0 GB</span></h3>
-                            </div>
-                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-all">
-                                <i class="fas fa-hdd"></i>
-                            </div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Disk Usage</p><h3 id="dash-disk-val" class="text-xl font-bold text-white mt-2">0 GB <span class="text-slate-500 text-sm" id="dash-disk-max">/ 0 GB</span></h3></div>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 transition-all group-hover:bg-indigo-500/20 group-hover:text-indigo-400"><i class="fas fa-hdd"></i></div>
                         </div>
-                        <div class="w-full bg-slate-700 rounded-full h-1.5">
-                            <div id="dash-disk-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div>
-                        </div>
+                        <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="dash-disk-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div></div>
                     </div>
                 </div>
-
-                <!-- 2. Action Bar with New Stream Button -->
                 <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-8">
                     <h3 class="text-lg font-bold text-white">Streaming Status</h3>
                     <div class="flex gap-3 w-full md:w-auto">
                         <div class="relative flex-1 md:w-64">
                             <i class="fas fa-search absolute left-4 top-3.5 text-slate-500 text-xs"></i>
-                            <input type="text" placeholder="Search streams..." class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all">
+                            <input type="text" placeholder="Search streams..." class="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
                         </div>
-                        <!-- Updated to use openNewStreamModal() -->
-                        <button onclick="openNewStreamModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 whitespace-nowrap">
-                            <i class="fas fa-plus"></i> New Stream
-                        </button>
+                        <button onclick="openNewStreamModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2 whitespace-nowrap"><i class="fas fa-plus"></i> New Stream</button>
                     </div>
                 </div>
-
-                <!-- 3. Streaming Status Table (Updated for Multi-Stream) -->
                 <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden mt-4">
-                    <!-- Table Header -->
                     <div class="grid grid-cols-12 gap-4 p-4 bg-slate-800/50 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                         <div class="col-span-5 md:col-span-4 pl-2">Stream Name</div>
                         <div class="hidden md:block col-span-2">Platform</div>
@@ -390,23 +309,13 @@
                         <div class="col-span-4 md:col-span-2">Status</div>
                         <div class="col-span-3 md:col-span-1 text-right pr-2">Actions</div>
                     </div>
-
-                    <!-- Empty State (Default) -->
                     <div id="stream-empty-state" class="flex flex-col items-center justify-center py-16 text-slate-500">
-                        <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                            <i class="fas fa-satellite-dish text-2xl opacity-50"></i>
-                        </div>
+                        <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4"><i class="fas fa-satellite-dish text-2xl opacity-50"></i></div>
                         <p class="text-sm font-medium">No active streams.</p>
                         <p class="text-xs opacity-50 mt-1">Click "New Stream" to start broadcasting.</p>
                     </div>
-
-                    <!-- Active Rows Container (Dynamically populated) -->
-                    <div id="streams-container" class="hidden">
-                        <!-- Rows injected via JS -->
-                    </div>
+                    <div id="streams-container" class="hidden"></div>
                 </div>
-
-                <!-- Footer -->
                 <div class="flex justify-between items-center text-xs text-slate-500 mt-4 px-2">
                     <span id="showing-text">Showing 0 active streams</span>
                     <div class="flex gap-2">
@@ -416,25 +325,22 @@
                 </div>
             </div>
 
-            <!-- Other Tabs Remain Same (Library, Settings, Profile, Users) -->
+            <!-- Library Tab -->
             <div id="tab-library" class="tab-content space-y-6">
                 <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
                     <h2 class="text-2xl font-bold">Media Library</h2>
-                    <div class="flex gap-2">
-                        <button onclick="document.getElementById('file-up').click()" class="bg-indigo-600 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-indigo-500 transition-all">Upload Media</button>
-                    </div>
+                    <button onclick="document.getElementById('file-up').click()" class="bg-indigo-600 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-indigo-500 transition-all">Upload Media</button>
                     <input type="file" id="file-up" class="hidden" onchange="handleUpload(this)">
                 </div>
-
                 <div class="flex p-1 bg-slate-900 rounded-2xl border border-slate-800 w-fit">
                     <button onclick="switchMediaTab('video')" id="mt-video" class="media-subtab active px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Videos</button>
                     <button onclick="switchMediaTab('audio')" id="mt-audio" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Audios</button>
                     <button onclick="switchMediaTab('image')" id="mt-image" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase">Images</button>
                 </div>
-
                 <div id="media-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
             </div>
 
+            <!-- Settings Tab -->
             <div id="tab-settings" class="tab-content space-y-6">
                 <h2 class="text-2xl font-bold">Settings</h2>
                 <div class="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50 max-w-2xl">
@@ -471,6 +377,7 @@
                 </div>
             </div>
             
+            <!-- Profile Tab -->
             <div id="tab-profile" class="tab-content space-y-6">
                 <h2 class="text-2xl font-bold">My Profile</h2>
                 <div class="bg-slate-800/50 p-6 rounded-3xl border border-slate-700/50 max-w-sm">
@@ -483,46 +390,30 @@
                 </div>
             </div>
 
+            <!-- Admin Panel Tab -->
             <div id="tab-users" class="tab-content space-y-6">
-                <!-- NEW: Admin Header Card (Summary) -->
                 <div class="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 relative overflow-hidden mb-8 shadow-xl">
-                    <!-- Background Glow Effect -->
                     <div class="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
-
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center relative z-10">
                         <div>
                             <div class="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">Active Plan</div>
                             <h2 class="text-2xl font-bold text-white tracking-tight" id="admin-plan-name">Loading...</h2>
                             <p class="text-xs text-emerald-400 font-bold mt-2" id="admin-exp-date">Exp: 2026-07-24</p>
                         </div>
-                        
-                        <!-- Storage Bar -->
                         <div>
-                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-3">
-                                <span>Storage</span>
-                                <span id="admin-storage-text" class="text-slate-300">0 / 0 MB</span>
-                            </div>
-                            <div class="w-full bg-slate-800 rounded-full h-1.5 relative overflow-hidden">
-                                <div id="admin-storage-bar" class="bg-indigo-500 h-1.5 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.6)] absolute top-0 left-0 transition-all duration-1000" style="width: 0%"></div>
-                            </div>
+                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-3"><span>Storage</span><span id="admin-storage-text" class="text-slate-300">0 / 0 MB</span></div>
+                            <div class="w-full bg-slate-800 rounded-full h-1.5 relative overflow-hidden"><div id="admin-storage-bar" class="bg-indigo-500 h-1.5 rounded-full absolute top-0 left-0 transition-all duration-1000" style="width: 0%"></div></div>
                         </div>
-
-                        <!-- Time Bar -->
                         <div>
-                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-3">
-                                <span>Time Used</span>
-                                <span id="admin-time-text" class="text-slate-300">0 / 24 H</span>
-                            </div>
-                            <div class="w-full bg-slate-800 rounded-full h-1.5 relative overflow-hidden">
-                                <div id="admin-time-bar" class="bg-emerald-500 h-1.5 rounded-full shadow-[0_0_15px_rgba(16,185,129,0.6)] absolute top-0 left-0 transition-all duration-1000" style="width: 0%"></div>
-                            </div>
+                            <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-3"><span>Time Used</span><span id="admin-time-text" class="text-slate-300">0 / 24 H</span></div>
+                            <div class="w-full bg-slate-800 rounded-full h-1.5 relative overflow-hidden"><div id="admin-time-bar" class="bg-emerald-500 h-1.5 rounded-full absolute top-0 left-0 transition-all duration-1000" style="width: 0%"></div></div>
                         </div>
                     </div>
                 </div>
 
                 <h2 class="text-2xl font-bold">Admin Panel</h2>
 
-                <!-- User Filter Tabs (Capsule Style like Media Library) -->
+                <!-- Capsule Tabs for Admin Filter -->
                 <div class="flex p-1 bg-slate-900 rounded-2xl border border-slate-800 w-fit mb-8 overflow-x-auto max-w-full" id="admin-tabs-container">
                     <button onclick="filterUsers('all')" class="admin-tab active" id="tab-user-all">ALL USERS</button>
                     <button onclick="filterUsers('Trial')" class="admin-tab" id="tab-user-Trial">TRIAL</button>
@@ -531,17 +422,8 @@
                     <button onclick="filterUsers('Sultan')" class="admin-tab" id="tab-user-Sultan">SULTAN</button>
                 </div>
 
-                <!-- Admin User List Header (Desktop Only) -->
-                <div class="hidden md:grid grid-cols-12 gap-4 px-6 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    <div class="col-span-4">User Details</div>
-                    <div class="col-span-4 text-center">Subscription Status</div>
-                    <div class="col-span-4 text-right">Actions</div>
-                </div>
-
-                <!-- Admin User List Container (Individual Card Style) -->
-                <div id="user-list-container" class="space-y-4">
-                    <!-- Cards Injected via JS -->
-                </div>
+                <!-- Admin User List Container -->
+                <div id="user-list-container" class="space-y-4"></div>
             </div>
         </main>
     </div>
@@ -553,9 +435,9 @@
         let allMedia = [];
         let isLoginMode = true;
         let confirmCallback = null;
-        let isStreamActive = false; // Kept for legacy check, but logic updated for array
+        let isStreamActive = false;
         let activeStreamsList = []; 
-        let allUsersData = []; // Store fetched users for client-side filtering
+        let allUsersData = []; 
         let currentAdminFilter = 'all';
 
         let modalSelectedMedia = new Set();
@@ -582,53 +464,33 @@
         function closeConfirmModal() { document.getElementById('custom-confirm-modal').classList.add('hidden'); }
         document.getElementById('btn-confirm-action').onclick = () => { confirmCallback?.(); closeConfirmModal(); };
 
-        /* --- FIXED NEW MODAL LOGIC START --- */
         function openNewStreamModal() {
             const modalWrapper = document.getElementById('new-stream-modal');
             const modalCard = document.getElementById('new-stream-card');
-            
             modalWrapper.classList.remove('hidden');
             modalWrapper.classList.add('flex');
-
-            // Reset Fields
             document.getElementById('modal-stream-title').value = '';
             document.getElementById('modal-stream-desc').value = '';
-            
-            requestAnimationFrame(() => {
-                modalCard.classList.add('active');
-            });
-            
+            requestAnimationFrame(() => { modalCard.classList.add('active'); });
             modalSelectedMedia.clear();
             updateModalSelectionCount();
-            
-            fetchMedia().then(() => {
-                renderModalMediaList();
-            }).catch(e => console.log('Fetch media ignored'));
+            fetchMedia().then(() => { renderModalMediaList(); }).catch(e => console.log('Fetch media ignored'));
         }
 
         function closeNewStreamModal() {
             const modalWrapper = document.getElementById('new-stream-modal');
             const modalCard = document.getElementById('new-stream-card');
-            
             modalCard.classList.remove('active');
-            
-            setTimeout(() => {
-                modalWrapper.classList.add('hidden');
-                modalWrapper.classList.remove('flex');
-            }, 200);
+            setTimeout(() => { modalWrapper.classList.add('hidden'); modalWrapper.classList.remove('flex'); }, 200);
         }
 
-        function togglePlatformDropdown() {
-            document.getElementById('platform-dropdown').classList.toggle('hidden');
-        }
+        function togglePlatformDropdown() { document.getElementById('platform-dropdown').classList.toggle('hidden'); }
 
         function selectModalPlatform(name, value) {
             document.getElementById('modal-platform-display').value = name;
             document.getElementById('modal-platform-value').value = value;
             document.getElementById('platform-dropdown').classList.add('hidden');
-            
-            const isCustom = value === 'custom';
-            document.getElementById('modal-custom-url-group').classList.toggle('hidden', !isCustom);
+            document.getElementById('modal-custom-url-group').classList.toggle('hidden', value !== 'custom');
         }
 
         function switchModalMediaTab(tab) {
@@ -636,13 +498,8 @@
             document.querySelectorAll('.modal-media-tab').forEach(t => {
                 const isActive = t.id === 'mmt-' + tab;
                 t.classList.toggle('active', isActive);
-                if(isActive) {
-                    t.classList.remove('bg-slate-800', 'text-slate-400');
-                    t.classList.add('bg-indigo-600', 'text-white', 'border-transparent');
-                } else {
-                    t.classList.add('border-slate-700', 'bg-slate-800', 'text-slate-400');
-                    t.classList.remove('bg-indigo-600', 'text-white', 'border-transparent');
-                }
+                if(isActive) { t.classList.remove('bg-slate-800', 'text-slate-400'); t.classList.add('bg-indigo-600', 'text-white', 'border-transparent'); } 
+                else { t.classList.add('border-slate-700', 'bg-slate-800', 'text-slate-400'); t.classList.remove('bg-indigo-600', 'text-white', 'border-transparent'); }
             });
             renderModalMediaList();
         }
@@ -652,36 +509,24 @@
                 if (v.thumbnail) return `<img src="/backend/uploads/${v.thumbnail}" class="${sizeClass} rounded-lg object-cover bg-black border border-slate-700">`;
                 return `<div class="${sizeClass} rounded-lg bg-slate-800 flex items-center justify-center border border-slate-700"><i class="fas fa-video text-slate-500"></i></div>`;
             }
-            if (v.type === 'image') {
-                return `<img src="/backend/uploads/${v.filename}" class="${sizeClass} rounded-lg object-cover bg-black border border-slate-700">`;
-            }
-            // Audio
+            if (v.type === 'image') return `<img src="/backend/uploads/${v.filename}" class="${sizeClass} rounded-lg object-cover bg-black border border-slate-700">`;
             return `<div class="${sizeClass} rounded-lg bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20"><i class="fas fa-music text-indigo-400"></i></div>`;
         }
 
         function renderModalMediaList() {
             const filtered = allMedia.filter(m => m.type === currentModalMediaTab);
             const container = document.getElementById('modal-media-list');
-            
             if (filtered.length === 0) {
-                container.innerHTML = `
-                    <div class="flex flex-col items-center justify-center h-full text-slate-600">
-                        <p class="text-xs italic">No files found.</p>
-                    </div>`;
+                container.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-slate-600"><p class="text-xs italic">No files found.</p></div>`;
                 return;
             }
-
             container.innerHTML = filtered.map(v => `
                 <div onclick="toggleModalMediaSelect(${v.id})" class="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors ${modalSelectedMedia.has(v.id) ? 'bg-indigo-900/20 border border-indigo-500/30' : ''}">
-                    <div class="w-8 h-8 flex-shrink-0">
-                        ${getMediaPreview(v, 'w-8 h-8')}
-                    </div>
-                    
+                    <div class="w-8 h-8 flex-shrink-0">${getMediaPreview(v, 'w-8 h-8')}</div>
                     <div class="flex-1 min-w-0">
                         <div class="truncate text-[10px] font-bold text-slate-300">${v.filename}</div>
                         <div class="text-[9px] text-slate-500 uppercase">${v.type}</div>
                     </div>
-                    
                     <div class="w-4 h-4 rounded border flex-shrink-0 ${modalSelectedMedia.has(v.id) ? 'bg-indigo-500 border-indigo-500 flex items-center justify-center' : 'border-slate-600'}">
                         ${modalSelectedMedia.has(v.id) ? '<i class="fas fa-check text-[8px] text-white"></i>' : ''}
                     </div>
@@ -690,15 +535,11 @@
         }
 
         function toggleModalMediaSelect(id) {
-            if (modalSelectedMedia.has(id)) modalSelectedMedia.delete(id);
-            else modalSelectedMedia.add(id);
-            renderModalMediaList(); 
-            updateModalSelectionCount();
+            if (modalSelectedMedia.has(id)) modalSelectedMedia.delete(id); else modalSelectedMedia.add(id);
+            renderModalMediaList(); updateModalSelectionCount();
         }
 
-        function updateModalSelectionCount() {
-            document.getElementById('modal-selected-count').textContent = modalSelectedMedia.size;
-        }
+        function updateModalSelectionCount() { document.getElementById('modal-selected-count').textContent = modalSelectedMedia.size; }
 
         async function goLiveFromModal() {
             const platformVal = document.getElementById('modal-platform-value').value;
@@ -707,45 +548,15 @@
             const loopVal = document.getElementById('modal-loop-toggle').checked;
             const titleVal = document.getElementById('modal-stream-title').value;
             const descVal = document.getElementById('modal-stream-desc').value;
-
-            if (!platformVal) { showToast('Please select a platform', 'error'); return; }
-            if (!keyVal) { showToast('Stream Key is required', 'error'); return; }
-            if (modalSelectedMedia.size === 0) { showToast('Select at least 1 media file', 'error'); return; }
-
-            let rtmpUrl = '';
-            if (platformVal === 'custom') {
-                if (!customUrlVal) { showToast('Server URL required for Custom RTMP', 'error'); return; }
-                rtmpUrl = customUrlVal + keyVal;
-            } else if (PLATFORMS[platformVal]) {
-                rtmpUrl = PLATFORMS[platformVal] + keyVal;
-            }
-
+            if (!platformVal || !keyVal || modalSelectedMedia.size === 0) { showToast('Please check required fields', 'error'); return; }
+            let rtmpUrl = platformVal === 'custom' ? customUrlVal + keyVal : PLATFORMS[platformVal] + keyVal;
             try {
-                const res = await fetch('/api/playlist/start', { 
-                    method: 'POST', 
-                    headers: {'Content-Type':'application/json'}, 
-                    body: JSON.stringify({ 
-                        ids: Array.from(modalSelectedMedia), 
-                        rtmpUrl, 
-                        loop: loopVal,
-                        title: titleVal,
-                        description: descVal
-                    }) 
-                });
+                const res = await fetch('/api/playlist/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ids: Array.from(modalSelectedMedia), rtmpUrl, loop: loopVal, title: titleVal, description: descVal }) });
                 const d = await res.json();
                 if (d.error) showToast(d.error, 'error'); 
-                else { 
-                    showToast(d.message); 
-                    closeNewStreamModal();
-                    // Just refresh status, let socket handle the rest
-                    const statusRes = await fetch('/api/stream/status');
-                    const state = await statusRes.json();
-                    updateStreamUI(state);
-                    switchTab('overview');
-                }
+                else { showToast(d.message); closeNewStreamModal(); switchTab('overview'); }
             } catch (e) { showToast('Error starting stream', 'error'); }
         }
-        /* --- FIXED NEW MODAL LOGIC END --- */
 
         async function checkAuth() {
             try {
@@ -761,17 +572,10 @@
         async function showDashboard() {
             setView('main-app');
             document.getElementById('login-view').classList.add('hidden');
-            updateUIInfo();
-            updateAdminHeader(); // New function for header card
+            updateUIInfo(); updateAdminHeader();
             if (currentUser.role === 'admin') document.getElementById('nav-users').classList.remove('hidden');
-            if (currentUser) {
-                document.getElementById('profile-username').value = currentUser.username;
-            }
-            fetchMedia(); fetchSettings();
-            
-            const res = await fetch('/api/stream/status');
-            const state = await res.json();
-            updateStreamUI(state);
+            if (currentUser) document.getElementById('profile-username').value = currentUser.username;
+            fetchMedia(); fetchSettings(); fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
             startMockStats();
         }
 
@@ -779,98 +583,44 @@
             if(!currentUser) return;
             const usedMB = (currentUser.storage_used / (1024 * 1024)).toFixed(1);
             const maxMB = currentUser.max_storage_mb;
-            const usedGB = (usedMB / 1024).toFixed(2);
-            const maxGB = (maxMB / 1024).toFixed(2);
-            
-            document.getElementById('dash-disk-val').innerHTML = `${usedGB} GB <span class="text-slate-500 text-sm">/ ${maxGB} GB</span>`;
+            document.getElementById('dash-disk-val').innerHTML = `${(usedMB/1024).toFixed(2)} GB <span class="text-slate-500 text-sm">/ ${(maxMB/1024).toFixed(2)} GB</span>`;
             document.getElementById('dash-disk-bar').style.width = Math.min((usedMB / maxMB * 100), 100) + '%';
         }
 
-        // New function to update the Admin Summary Card
         function updateAdminHeader() {
             if(!currentUser) return;
-            
-            // Populate Plan Name
             document.getElementById('admin-plan-name').textContent = currentUser.plan_name || 'Standard Plan';
-            
-            // Update Storage Bar in Header
             const usedMB = (currentUser.storage_used / (1024 * 1024)).toFixed(1);
             const maxMB = currentUser.max_storage_mb;
-            const percentageStorage = Math.min((usedMB / maxMB * 100), 100);
             document.getElementById('admin-storage-text').textContent = `${usedMB} / ${maxMB} MB`;
-            document.getElementById('admin-storage-bar').style.width = percentageStorage + '%';
-            
-            // Update Time Bar in Header
+            document.getElementById('admin-storage-bar').style.width = Math.min((usedMB / maxMB * 100), 100) + '%';
             const usedHours = (currentUser.usage_seconds / 3600).toFixed(1);
-            // Assuming 24H daily limit for admin or from plan
-            const maxHours = 24; 
-            const percentageTime = Math.min((usedHours / maxHours * 100), 100);
-            document.getElementById('admin-time-text').textContent = `${usedHours} / ${maxHours} H`;
-            document.getElementById('admin-time-bar').style.width = percentageTime + '%';
+            document.getElementById('admin-time-text').textContent = `${usedHours} / 24 H`;
+            document.getElementById('admin-time-bar').style.width = Math.min((usedHours / 24 * 100), 100) + '%';
         }
 
         function startMockStats() {
             setInterval(() => {
                 const baseCpu = isStreamActive ? 25 : 5;
-                const variance = Math.random() * 10;
-                const cpuVal = Math.floor(baseCpu + variance);
+                const cpuVal = Math.floor(baseCpu + (Math.random() * 10));
                 document.getElementById('dash-cpu-val').textContent = cpuVal + '%';
                 document.getElementById('dash-cpu-bar').style.width = cpuVal + '%';
-                
-                const baseMem = isStreamActive ? 450 : 250; 
-                const memVal = Math.floor(baseMem + (Math.random() * 20));
-                document.getElementById('dash-mem-val').innerHTML = `${memVal} MB <span class="text-slate-500 text-sm">/ 1 GB</span>`;
-                document.getElementById('dash-mem-bar').style.width = (memVal / 1024 * 100) + '%';
             }, 2000);
         }
 
         async function fetchPublicPlans() {
             const res = await fetch('/api/plans-public');
             const plans = await res.json();
-            document.getElementById('pricing-grid').innerHTML = plans.map(p => {
-                let extraControls = '';
-                if (p.id === 3) {
-                     let options = '';
-                     for(let i=1; i<=12; i++) options += `<option value="${i}">${i} Bulan</option>`;
-                     extraControls = `
-                        <div class="mt-4 mb-2 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
-                            <label class="text-[10px] uppercase font-bold text-slate-500 block mb-1">Durasi Langganan</label>
-                            <select onchange="updatePlanPrice(this, '${p.price_text}', ${p.id})" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-indigo-500 font-bold">
-                                ${options}
-                            </select>
-                        </div>
-                     `;
-                }
-                const featuresList = p.features_text 
-                    ? p.features_text.split(',').map(f => `<li><i class="fas fa-check text-indigo-400 mr-2"></i> ${f.trim()}</li>`).join('')
-                    : '';
-
-                return `
+            document.getElementById('pricing-grid').innerHTML = plans.map(p => `
                 <div class="glass p-8 rounded-[3rem] border border-slate-800 flex flex-col ${p.id === 4 ? 'ring-2 ring-indigo-500' : ''} relative overflow-hidden group hover:border-indigo-500/30 transition-all">
                     <h4 class="text-lg font-bold">${p.name}</h4>
-                    <div id="price-display-${p.id}" class="text-2xl font-black text-indigo-400 my-4 transition-opacity duration-300">${p.price_text}</div>
-                    ${extraControls}
+                    <div id="price-display-${p.id}" class="text-2xl font-black text-indigo-400 my-4">${p.price_text}</div>
                     <ul class="text-xs text-slate-400 space-y-2 flex-1 mb-6">
                         <li><i class="fas fa-check text-indigo-400 mr-2"></i> ${p.daily_limit_hours} Jam/hari</li>
                         <li><i class="fas fa-check text-indigo-400 mr-2"></i> ${p.max_storage_mb}MB Storage</li>
-                         ${featuresList}
                     </ul>
-                    <button onclick="showAuth('register')" class="w-full py-3 bg-indigo-600 rounded-xl font-bold hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-500/20">Pilih Paket</button>
-                </div>`;
-            }).join('');
-        }
-
-        function updatePlanPrice(select, basePriceStr, planId) {
-            const basePrice = parseInt(basePriceStr.replace(/[^0-9]/g, ''));
-            const months = parseInt(select.value);
-            if(isNaN(basePrice)) return;
-            const total = basePrice * months;
-            const formatted = 'Rp ' + total.toLocaleString('id-ID'); 
-            const el = document.getElementById(`price-display-${planId}`);
-            if (el) {
-                el.style.opacity = '0';
-                setTimeout(() => { el.textContent = formatted; el.style.opacity = '1'; }, 150);
-            }
+                    <button onclick="showAuth('register')" class="w-full py-3 bg-indigo-600 rounded-xl font-bold hover:bg-indigo-500 transition-all">Pilih Paket</button>
+                </div>`).join('');
         }
 
         function switchTab(tab) {
@@ -882,390 +632,163 @@
         async function fetchMedia() {
             const res = await fetch('/api/videos');
             allMedia = await res.json();
-            if (document.getElementById('media-list').innerHTML !== "") renderMediaList();
+            renderMediaList();
         }
 
         function renderMediaList() {
             const filtered = allMedia.filter(m => m.type === (window.currentMediaTab || 'video'));
             document.getElementById('media-list').innerHTML = filtered.map(v => `
                 <div class="bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50 flex items-center gap-4 group hover:bg-slate-800 transition-colors">
-                    <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500 rounded focus:ring-0 flex-shrink-0">
-                    
+                    <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500 rounded flex-shrink-0">
                     ${getMediaPreview(v, 'w-16 h-16')}
-
                     <div class="flex-1 min-w-0">
-                        <div class="truncate text-xs font-bold text-slate-300 mb-1" title="${v.filename}">${v.filename}</div>
+                        <div class="truncate text-xs font-bold text-slate-300 mb-1">${v.filename}</div>
                         <div class="text-[10px] text-slate-500 uppercase">${v.type} • ${(v.size/1024/1024).toFixed(1)} MB</div>
                     </div>
-                    
-                    <button onclick="toggleLock(${v.id})" class="transition-all ${v.is_locked ? 'text-amber-400' : 'text-slate-600 hover:text-amber-400'}" title="${v.is_locked ? 'Unlock Media' : 'Lock Media'}">
-                        <i class="fas ${v.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i>
-                    </button>
-
-                    ${!v.is_locked ? 
-                    `<button onclick="deleteMedia(${v.id})" class="text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-trash"></i></button>` 
-                    : '<span class="w-4"></span>'}
+                    <button onclick="toggleLock(${v.id})" class="${v.is_locked ? 'text-amber-400' : 'text-slate-600 hover:text-amber-400'}"><i class="fas ${v.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
+                    ${!v.is_locked ? `<button onclick="deleteMedia(${v.id})" class="text-rose-500 opacity-0 group-hover:opacity-100"><i class="fas fa-trash"></i></button>` : '<span class="w-4"></span>'}
                 </div>`).join('');
         }
 
         async function toggleLock(id) {
-            try {
-                const res = await fetch(`/api/videos/${id}/lock`, { method: 'PUT' });
-                const data = await res.json();
-                if (data.success) {
-                    showToast(data.locked ? 'Media Protected (Locked)' : 'Media Unlocked');
-                    // Update local state without full fetch if possible, but full fetch is safer for array sync
-                    fetchMedia(); 
-                } else {
-                    showToast(data.error, 'error');
-                }
-            } catch (e) { showToast('Connection Error', 'error'); }
+            const res = await fetch(`/api/videos/${id}/lock`, { method: 'PUT' });
+            const data = await res.json();
+            if (data.success) { showToast(data.locked ? 'Media Locked' : 'Media Unlocked'); fetchMedia(); }
         }
 
-        function switchMediaTab(tab) { 
-            window.currentMediaTab = tab; 
-            document.querySelectorAll('.media-subtab').forEach(t => t.classList.toggle('active', t.id === 'mt-' + tab));
-            renderMediaList(); 
-        }
+        function switchMediaTab(tab) { window.currentMediaTab = tab; document.querySelectorAll('.media-subtab').forEach(t => t.classList.toggle('active', t.id === 'mt-' + tab)); renderMediaList(); }
 
-        function toggleSelect(id) {
-            if (selectedMedia.has(id)) selectedMedia.delete(id); else selectedMedia.add(id);
-        }
+        function toggleSelect(id) { if (selectedMedia.has(id)) selectedMedia.delete(id); else selectedMedia.add(id); }
 
         async function fetchSettings() {
             const res = await fetch('/api/settings');
             const d = await res.json();
             document.getElementById('setting-platform').value = d.stream_platform || 'youtube';
             document.getElementById('setting-key').value = d.stream_key || '';
-            document.getElementById('setting-full-rtmp').value = d.rtmp_url || '';
-            document.getElementById('setting-server-url').value = d.custom_server_url || '';
-            
-            if(d.stream_platform && d.stream_platform !== 'custom') {
-                 const map = { 'youtube': 'YouTube', 'facebook': 'Facebook', 'twitch': 'Twitch' };
-                 if(map[d.stream_platform]) {
-                     document.getElementById('modal-platform-display').value = map[d.stream_platform];
-                     document.getElementById('modal-platform-value').value = d.stream_platform;
-                 }
-            }
-            if(d.stream_key) document.getElementById('modal-stream-key').value = d.stream_key;
-            
             handlePlatformChange(); 
         }
 
         async function fetchUsers() {
-            try {
-                const res = await fetch('/api/users');
-                allUsersData = await res.json();
-                filterUsers(currentAdminFilter);
-            } catch (e) {
-                console.error("Fetch users error", e);
-            }
+            const res = await fetch('/api/users');
+            allUsersData = await res.json();
+            filterUsers(currentAdminFilter);
         }
 
         function filterUsers(filter) {
             currentAdminFilter = filter;
-            
-            // Update Tab UI
-            document.querySelectorAll('.admin-tab').forEach(btn => {
-                const id = btn.id.replace('tab-user-', '');
-                btn.classList.toggle('active', id === filter);
-            });
-
-            // Filter logic
+            document.querySelectorAll('.admin-tab').forEach(btn => btn.classList.toggle('active', btn.id === 'tab-user-' + filter));
             let filtered = allUsersData;
-            if (filter !== 'all') {
-                const target = filter.toLowerCase();
-                filtered = allUsersData.filter(u => {
-                    // Map generic categories to specific DB plan names if needed
-                    // Pro maps to 'Starter' UI wise
-                    if (filter === 'Starter' && u.plan_name.toLowerCase().includes('pro')) return true;
-                    if (filter === 'Trial' && u.plan_name.toLowerCase().includes('trial')) return true;
-                    if (filter === 'Radio' && u.plan_name.toLowerCase().includes('radio')) return true;
-                    if (filter === 'Sultan' && u.plan_name.toLowerCase().includes('sultan')) return true;
-                    return false;
-                });
-            }
-
+            if (filter !== 'all') filtered = allUsersData.filter(u => u.plan_name.includes(filter));
             renderUserList(filtered);
         }
 
         function renderUserList(users) {
             const container = document.getElementById('user-list-container');
-            if (users.length === 0) {
-                container.innerHTML = `<div class="p-8 text-center text-slate-500 italic text-sm">No users found in this category.</div>`;
-                return;
-            }
-
-            container.innerHTML = users.map(u => {
-                // Mock Expiry calculation just for visual demo since DB doesn't have it explicitly
-                // In production, you'd fetch this from DB 'created_at' + plan duration
-                const today = new Date();
-                today.setDate(today.getDate() + 30); 
-                const mockDate = today.toISOString().split('T')[0];
-                const planNameUpper = (u.plan_name || 'Standard').toUpperCase();
-                
-                return `
+            if (users.length === 0) { container.innerHTML = `<p class="p-8 text-center text-slate-500">No users found.</p>`; return; }
+            container.innerHTML = users.map(u => `
                 <div class="user-card group">
-                    <!-- User Info -->
                     <div class="col-span-12 md:col-span-4 flex items-center gap-4 w-full">
-                        <div class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-indigo-500 font-bold text-lg border border-slate-700">
-                            ${u.username.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                            <div class="text-sm font-bold text-white">${u.username}</div>
-                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">${planNameUpper}</div>
-                        </div>
+                        <div class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-indigo-500 font-bold border border-slate-700">${u.username.charAt(0).toUpperCase()}</div>
+                        <div><div class="text-sm font-bold text-white">${u.username}</div><div class="text-[10px] font-bold text-slate-500 uppercase">${u.plan_name}</div></div>
                     </div>
-
-                    <!-- Status -->
                     <div class="col-span-6 md:col-span-4 flex flex-col items-start md:items-center justify-center w-full border-t md:border-t-0 border-slate-800 pt-4 md:pt-0 mt-2 md:mt-0">
-                        <span class="text-[10px] text-slate-500 font-bold uppercase mb-1 md:hidden">Expire Date</span>
-                        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
-                            ${mockDate}
-                        </span>
+                        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">Active</span>
                     </div>
-
-                    <!-- Actions -->
                     <div class="col-span-6 md:col-span-4 flex justify-end items-center gap-2 w-full border-t md:border-t-0 border-slate-800 pt-4 md:pt-0 mt-2 md:mt-0">
-                        <button onclick="alert('Manage ${u.username}')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-indigo-600 text-slate-400 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-indigo-500">
-                            Manage
-                        </button>
-                        <button onclick="alert('Delete ${u.username}')" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white flex items-center justify-center transition-all border border-slate-700 hover:border-rose-500">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
+                        <button onclick="alert('Manage ${u.username}')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-indigo-600 text-xs font-bold transition-all border border-slate-700">Manage</button>
+                        <button onclick="alert('Delete ${u.username}')" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white flex items-center justify-center transition-all border border-slate-700"><i class="fas fa-trash-alt"></i></button>
                     </div>
-                </div>
-            `;
-            }).join('');
+                </div>`).join('');
         }
 
         function updateStreamUI(state) {
             isStreamActive = state.active;
             activeStreamsList = state.streams || [];
-
             document.getElementById('status-dot').className = `w-2 h-2 rounded-full ${isStreamActive ? 'bg-emerald-500' : 'bg-slate-500'}`;
             document.getElementById('status-label').textContent = isStreamActive ? 'Live' : 'Offline';
             document.getElementById('dash-active-count').textContent = activeStreamsList.length;
-            document.getElementById('dash-active-bar').style.width = isStreamActive ? '100%' : '0%';
-
-            // Render Rows
             const container = document.getElementById('streams-container');
             const emptyState = document.getElementById('stream-empty-state');
-            
-            if (activeStreamsList.length === 0) {
-                container.classList.add('hidden');
-                emptyState.classList.remove('hidden');
-                document.getElementById('showing-text').textContent = 'Showing 0 active streams';
-            } else {
-                emptyState.classList.add('hidden');
-                container.classList.remove('hidden');
-                
+            if (activeStreamsList.length === 0) { container.classList.add('hidden'); emptyState.classList.remove('hidden'); } 
+            else {
+                emptyState.classList.add('hidden'); container.classList.remove('hidden');
                 container.innerHTML = activeStreamsList.map(s => `
-                    <div id="stream-row-${s.id}" class="grid grid-cols-12 gap-4 p-4 items-center border-b border-slate-800/50 stream-row">
+                    <div class="grid grid-cols-12 gap-4 p-4 items-center border-b border-slate-800/50 stream-row">
                         <div class="col-span-5 md:col-span-4 pl-2 flex items-center gap-3">
-                            <div class="w-10 h-10 bg-indigo-500/10 rounded-lg flex items-center justify-center border border-indigo-500/20">
-                                <i class="fas fa-play text-indigo-400 text-xs"></i>
-                            </div>
-                            <div class="overflow-hidden">
-                                <h4 class="text-sm font-bold text-white truncate">${s.name || 'Live Stream'}</h4>
-                                <p class="text-xs text-slate-500 truncate font-mono">ID: #${s.id.substr(0,4)}</p>
-                            </div>
+                            <div class="w-10 h-10 bg-indigo-500/10 rounded-lg flex items-center justify-center border border-indigo-500/20"><i class="fas fa-play text-indigo-400 text-xs"></i></div>
+                            <div class="overflow-hidden"><h4 class="text-sm font-bold text-white truncate">${s.name}</h4><p class="text-xs text-slate-500 truncate font-mono">ID: #${s.id.substr(0,4)}</p></div>
                         </div>
-                        <div class="hidden md:block col-span-2">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300">
-                                <i class="fab fa-${s.platform.toLowerCase() === 'custom' ? 'server' : s.platform.toLowerCase()} ${s.platform.toLowerCase() === 'youtube' ? 'text-red-500' : (s.platform.toLowerCase() === 'facebook' ? 'text-blue-500' : 'text-slate-400')}"></i> ${s.platform}
-                            </span>
-                        </div>
-                        <div class="hidden md:block col-span-3">
-                            <div class="flex flex-col gap-1">
-                                <span class="text-xs font-mono text-slate-300"><i class="fas fa-clock text-slate-600 mr-1"></i> <span id="dur-${s.id}">00:00:00</span></span>
-                                <span class="text-[10px] font-mono text-slate-500"><i class="fas fa-signal text-slate-600 mr-1"></i> <span id="bit-${s.id}">0 kbps</span></span>
-                            </div>
-                        </div>
-                        <div class="col-span-4 md:col-span-2">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 pulse-live">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> LIVE
-                            </span>
-                        </div>
-                        <div class="col-span-3 md:col-span-1 text-right pr-2">
-                            <button onclick="stopStream('${s.id}')" class="text-slate-400 hover:text-rose-500 transition-colors p-2 rounded-lg hover:bg-rose-500/10" title="Stop Stream">
-                                <i class="fas fa-stop-circle text-lg"></i>
-                            </button>
-                        </div>
-                    </div>
-                `).join('');
-                
-                document.getElementById('showing-text').textContent = `Showing ${activeStreamsList.length} active streams`;
+                        <div class="hidden md:block col-span-2"><span class="px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300">${s.platform}</span></div>
+                        <div class="hidden md:block col-span-3 text-xs font-mono text-slate-300" id="dur-${s.id}">00:00:00</div>
+                        <div class="col-span-4 md:col-span-2"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 pulse-live"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> LIVE</span></div>
+                        <div class="col-span-3 md:col-span-1 text-right pr-2"><button onclick="stopStream('${s.id}')" class="text-slate-400 hover:text-rose-500"><i class="fas fa-stop-circle text-lg"></i></button></div>
+                    </div>`).join('');
             }
         }
 
         socket.on('stats', (data) => {
-            if (!isStreamActive) {
-                // If UI is out of sync, fetch full status
-                 fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
-                 return;
-            }
-            
-            // Only update specific row text to avoid re-rendering DOM every second
             const durEl = document.getElementById(`dur-${data.streamId}`);
-            const bitEl = document.getElementById(`bit-${data.streamId}`);
-            
             if (durEl) durEl.textContent = data.duration.split('.')[0];
-            if (bitEl) bitEl.textContent = data.bitrate;
-
-            if (data.usage_remaining !== undefined && currentUser) {
-                const limitHrs = currentUser.daily_limit_hours || 24;
-                const limitSecs = limitHrs * 3600;
-                const usedSecs = limitSecs - data.usage_remaining;
-                currentUser.usage_seconds = usedSecs; 
-                // Auto update admin header if on admin tab
-                updateAdminHeader();
-            }
         });
         
-        socket.on('stream_ended', (data) => {
-             // Refresh list when a stream ends to remove the row
-             fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
-        });
-
-        socket.on('log', (data) => {
-            // Optional: Log console handling
-        });
+        socket.on('stream_ended', () => fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s)));
 
         async function handleLogout() { await fetch('/api/logout', {method:'POST'}); location.reload(); }
-        function showAuth(m) { 
-            isLoginMode = m==='login'; 
-            toggleAuthMode(true); 
-            document.getElementById('login-view').classList.remove('hidden'); 
-        }
+        function showAuth(m) { isLoginMode = m==='login'; toggleAuthMode(true); document.getElementById('login-view').classList.remove('hidden'); }
         function hideAuth() { document.getElementById('login-view').classList.add('hidden'); }
-        
         function toggleAuthMode(force) {
             if (!force) isLoginMode = !isLoginMode;
             document.getElementById('auth-title').textContent = isLoginMode ? 'LiteStream Login' : 'Register Member';
             document.getElementById('auth-btn').textContent = isLoginMode ? 'MASUK DASHBOARD' : 'DAFTAR SEKARANG';
-            document.getElementById('toggle-text').textContent = isLoginMode ? 'Belum punya akun?' : 'Sudah punya akun?';
-            document.getElementById('toggle-btn').textContent = isLoginMode ? 'Daftar Sekarang' : 'Login Member';
         }
 
         async function handleAuth(e) {
             e.preventDefault();
             const user = document.getElementById('login-user').value;
             const pass = document.getElementById('login-pass').value;
-            const endpoint = isLoginMode ? '/api/login' : '/api/register';
-            try {
-                const res = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: user, password: pass })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    if (isLoginMode) { checkAuth(); } else {
-                        showToast('Registrasi berhasil! Silakan login.');
-                        isLoginMode = true; toggleAuthMode(true);
-                        document.getElementById('login-user').value = ''; document.getElementById('login-pass').value = '';
-                    }
-                } else { showToast(data.error || 'Authentication failed', 'error'); }
-            } catch (err) { showToast('Connection error', 'error'); }
+            const res = await fetch(isLoginMode ? '/api/login' : '/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, password: pass }) });
+            const data = await res.json();
+            if (data.success) { if (isLoginMode) checkAuth(); else { showToast('Registrasi berhasil! Silakan login.'); isLoginMode = true; toggleAuthMode(true); } } 
+            else { showToast(data.error || 'Authentication failed', 'error'); }
         }
 
         async function handleUpload(input) {
-            if (!input.files || !input.files[0]) return;
-            const file = input.files[0];
-            const formData = new FormData();
-            formData.append('video', file);
+            if (!input.files[0]) return;
+            const formData = new FormData(); formData.append('video', input.files[0]);
             showToast('Uploading media...', 'success');
-            try {
-                const res = await fetch('/api/videos/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                if (data.success) { showToast('Upload berhasil!'); fetchMedia(); updateUIInfo(); updateAdminHeader(); } 
-                else { showToast(data.error || 'Upload failed', 'error'); }
-            } catch (err) { showToast('Upload error', 'error'); }
+            const res = await fetch('/api/videos/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.success) { showToast('Upload berhasil!'); fetchMedia(); updateUIInfo(); } 
+            else showToast(data.error, 'error');
             input.value = '';
         }
 
         function deleteMedia(id) {
             openConfirmModal('Hapus media ini secara permanen?', async () => {
-                try {
-                    const res = await fetch(`/api/videos/${id}`, { method: 'DELETE' });
-                    const data = await res.json();
-                    if (data.success) {
-                        showToast('Media dihapus');
-                        if (selectedMedia.has(id)) selectedMedia.delete(id);
-                        if (modalSelectedMedia.has(id)) modalSelectedMedia.delete(id); 
-                        fetchMedia(); updateUIInfo(); updateAdminHeader();
-                    } else { showToast(data.error, 'error'); }
-                } catch (e) { showToast('Error deleting media', 'error'); }
+                const res = await fetch(`/api/videos/${id}`, { method: 'DELETE' });
+                if ((await res.json()).success) { showToast('Media dihapus'); fetchMedia(); updateUIInfo(); }
             });
         }
 
-        function handlePlatformChange() {
-            const platform = document.getElementById('setting-platform').value;
-            const isCustom = platform === 'custom';
-            document.getElementById('server-url-container').classList.toggle('hidden', !isCustom);
-        }
-
-        function toggleKeyVisibility() {
-            const input = document.getElementById('setting-key');
-            const icon = document.getElementById('eye-icon');
-            if (input.type === 'password') { input.type = 'text'; icon.classList.remove('fa-eye'); icon.classList.add('fa-eye-slash'); } 
-            else { input.type = 'password'; icon.classList.remove('fa-eye-slash'); icon.classList.add('fa-eye'); }
-        }
+        function handlePlatformChange() { document.getElementById('server-url-container').classList.toggle('hidden', document.getElementById('setting-platform').value !== 'custom'); }
+        function toggleKeyVisibility() { const i = document.getElementById('setting-key'); i.type = i.type === 'password' ? 'text' : 'password'; }
 
         async function saveSettings(e) {
             e.preventDefault();
             const platform = document.getElementById('setting-platform').value;
             const key = document.getElementById('setting-key').value;
-            const customUrl = document.getElementById('setting-server-url').value;
-            let rtmpUrl = '';
-            if (platform === 'custom') { rtmpUrl = customUrl + key; } else if (PLATFORMS[platform]) { rtmpUrl = PLATFORMS[platform] + key; }
-            document.getElementById('setting-full-rtmp').value = rtmpUrl;
-
-            try {
-                const res = await fetch('/api/settings', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ stream_platform: platform, stream_key: key, custom_server_url: customUrl, rtmp_url: rtmpUrl })
-                });
-                const data = await res.json();
-                if (data.success) showToast('Settings saved!'); else showToast('Failed to save', 'error');
-            } catch(err) { showToast('Error saving settings', 'error'); }
+            const res = await fetch('/api/settings', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ stream_platform: platform, stream_key: key }) });
+            if ((await res.json()).success) showToast('Settings saved!');
         }
 
         async function saveProfile(e) {
             e.preventDefault();
-            const username = document.getElementById('profile-username').value;
-            const currentPass = document.getElementById('profile-current-pass').value;
-            const newPass = document.getElementById('profile-new-pass').value;
-            try {
-                const res = await fetch('/api/profile', {
-                    method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username, currentPassword: currentPass, newPassword: newPass })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showToast(data.message);
-                    document.getElementById('profile-current-pass').value = '';
-                    document.getElementById('profile-new-pass').value = '';
-                    if (currentUser) currentUser.username = username;
-                } else { showToast(data.error, 'error'); }
-            } catch (err) { showToast('Error updating profile', 'error'); }
+            const res = await fetch('/api/profile', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: document.getElementById('profile-username').value, currentPassword: document.getElementById('profile-current-pass').value, newPassword: document.getElementById('profile-new-pass').value }) });
+            const d = await res.json();
+            if (d.success) showToast(d.message); else showToast(d.error, 'error');
         }
 
-        async function stopStream(id) {
-            try {
-                // Pass optional ID. If null (legacy), backend handles gracefully, but new UI passes ID
-                const body = id ? JSON.stringify({ streamId: id }) : '{}';
-                await fetch('/api/stream/stop', {
-                    method:'POST',
-                    headers: {'Content-Type':'application/json'},
-                    body
-                });
-                showToast('Stopping stream...', 'success');
-            } catch (e) { showToast('Error stopping stream', 'error'); }
-        }
+        async function stopStream(id) { await fetch('/api/stream/stop', { method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ streamId: id }) }); }
 
         window.onload = checkAuth;
     </script>
