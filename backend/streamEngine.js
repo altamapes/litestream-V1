@@ -114,21 +114,25 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       }
       
       // UNIVERSAL OUTPUT OPTIONS (Transcoding)
+      // FIX: Added CBR (Constant Bitrate) settings to satisfy YouTube requirements
       command.outputOptions([
         '-c:v libx264',
         '-preset veryfast', 
         '-tune zerolatency',
-        `-vf ${videoFilter}`, // Apply standardized scaling
-        '-pix_fmt yuv420p',   // Required for web players
-        '-r 30',              // Stabilize framerate
-        '-g 60',              // Keyframe interval (2s)
-        '-b:v 2500k',         
-        '-maxrate 2500k',
-        '-bufsize 5000k',
-        '-c:a aac',           // Re-encode audio to AAC
+        `-vf ${videoFilter}`,
+        '-pix_fmt yuv420p',
+        '-r 30',
+        '-g 60',
+        '-b:v 2500k',       // Target Bitrate
+        '-minrate 2500k',   // FORCE Minimum Bitrate (Fixes low bitrate error)
+        '-maxrate 2500k',   // FORCE Maximum Bitrate
+        '-bufsize 5000k',   // Buffer
+        '-nal-hrd cbr',     // Enforce CBR compliance for libx264
+        '-c:a aac',
         '-ar 44100',
         '-b:a 128k',
-        '-bsf:a aac_adtstoasc', // CRITICAL: Fixes MP4->FLV audio bitstream issues
+        '-ac 2',            // Force Stereo
+        '-bsf:a aac_adtstoasc',
         '-f flv',
         '-flvflags no_duration_filesize'
       ]);
