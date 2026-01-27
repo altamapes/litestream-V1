@@ -240,7 +240,13 @@
             <nav class="space-y-1 flex-1 pr-4">
                 <button onclick="switchTab('overview')" id="nav-overview" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white active"><i class="fas fa-chart-pie w-5"></i> Overview</button>
                 <button onclick="switchTab('library')" id="nav-library" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-folder w-5"></i> Media Library</button>
-                <button onclick="switchTab('users')" id="nav-users" class="nav-link hidden w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-users-cog w-5"></i> Admin Panel</button>
+                
+                <!-- Users Panel (Renamed from Admin Panel) -->
+                <button onclick="switchTab('users')" id="nav-users" class="nav-link hidden w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-users w-5"></i> Users Panel</button>
+                
+                <!-- Content & Plans (New) -->
+                <button onclick="switchTab('content')" id="nav-content" class="nav-link hidden w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-pen-nib w-5"></i> Content & Plans</button>
+                
                 <button onclick="switchTab('settings')" id="nav-settings" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-sliders w-5"></i> Settings</button>
                 <button onclick="switchTab('profile')" id="nav-profile" class="nav-link w-full flex items-center gap-4 px-8 py-3 text-slate-400 transition-all font-medium text-sm hover:text-white"><i class="fas fa-user-circle w-5"></i> My Profile</button>
             </nav>
@@ -260,7 +266,7 @@
                 </div>
             </header>
 
-            <!-- Admin Panel Tab -->
+            <!-- Admin: Users Panel -->
             <div id="tab-users" class="tab-content space-y-8">
                 
                 <!-- Premium Summary Card -->
@@ -332,6 +338,17 @@
                     <div id="user-list-container" class="space-y-3">
                         <!-- User Rows injected via JS -->
                     </div>
+                </div>
+            </div>
+
+            <!-- Admin: Content & Plans (Placeholder) -->
+            <div id="tab-content" class="tab-content space-y-6">
+                <h2 class="text-2xl font-bold">Content & Plans Management</h2>
+                <div class="bg-slate-800/40 p-12 rounded-3xl border border-slate-800 text-center">
+                    <div class="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500">
+                        <i class="fas fa-tools text-2xl"></i>
+                    </div>
+                    <p class="text-slate-400 font-medium">Module under construction.</p>
                 </div>
             </div>
 
@@ -608,7 +625,10 @@
             setView('main-app');
             document.getElementById('login-view').classList.add('hidden');
             updateUIInfo(); updateAdminHeader();
-            if (currentUser.role === 'admin') document.getElementById('nav-users').classList.remove('hidden');
+            if (currentUser.role === 'admin') {
+                document.getElementById('nav-users').classList.remove('hidden');
+                document.getElementById('nav-content').classList.remove('hidden');
+            }
             if (currentUser) document.getElementById('profile-username').value = currentUser.username;
             fetchMedia(); fetchSettings(); fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
             startMockStats();
