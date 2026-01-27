@@ -83,7 +83,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ]);
 
     } 
-    // --- VIDEO HANDLING ---
+    // --- VIDEO HANDLING (UPDATED) ---
     else {
       const uniqueId = streamId;
       currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
@@ -95,7 +95,26 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       if (loop) videoInputOpts.unshift('-stream_loop', '-1');
 
       command.input(currentPlaylistPath).inputOptions(videoInputOpts);
-      command.outputOptions(['-c copy', '-f flv', '-flvflags no_duration_filesize']);
+      
+      // PERBAIKAN: Menggunakan transcoding (libx264 + aac) alih-alih copy
+      // Ini memastikan kompatibilitas RTMP meski input MP4 berbeda-beda codec.
+      // Setting disesuaikan untuk VPS Low-End (720p, Ultrafast preset).
+      command.outputOptions([
+        '-c:v libx264',
+        '-preset ultrafast', 
+        '-tune zerolatency',
+        '-vf scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
+        '-r 30',              // Stabil di 30 FPS
+        '-g 60',              // Keyframe interval 2 detik (Wajib untuk YouTube/FB)
+        '-b:v 2500k',         // Bitrate Video
+        '-maxrate 2500k',
+        '-bufsize 5000k',
+        '-c:a aac',           // Encode audio ke AAC (Standar RTMP)
+        '-ar 44100',
+        '-b:a 128k',
+        '-f flv',
+        '-flvflags no_duration_filesize'
+      ]);
     }
 
     // --- EVENTS ---
