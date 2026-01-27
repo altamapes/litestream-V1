@@ -847,6 +847,9 @@
         }
 
         socket.on('stats', (data) => {
+            // Force active UI if stats received but UI thinks inactive
+            if (!isStreamActive) updateStreamUI(true);
+
             document.getElementById('row-duration').textContent = data.duration.split('.')[0]; 
             document.getElementById('row-bitrate').textContent = data.bitrate;
             
@@ -867,7 +870,7 @@
             consoleEl.scrollTop = consoleEl.scrollHeight;
             
             if (data.type === 'start') updateStreamUI(true);
-            if (data.type === 'end' || data.type === 'info') updateStreamUI(false);
+            if (data.type === 'end') updateStreamUI(false);
         });
 
         async function handleLogout() { await fetch('/api/logout', {method:'POST'}); location.reload(); }
