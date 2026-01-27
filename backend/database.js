@@ -56,10 +56,19 @@ const initDB = () => {
         if (!hasReset) db.run("ALTER TABLE users ADD COLUMN last_usage_reset TEXT");
       });
 
-      db.run(`CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, filename TEXT NOT NULL, path TEXT NOT NULL, size INTEGER, type TEXT DEFAULT 'video', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+      // 3. Tabel Videos dengan support LOCK
+      db.run(`CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, filename TEXT NOT NULL, path TEXT NOT NULL, size INTEGER, type TEXT DEFAULT 'video', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_locked INTEGER DEFAULT 0)`);
+      
+      // Migrasi kolom is_locked
+      db.all("PRAGMA table_info(videos)", (err, columns) => {
+        if (err || !columns) return;
+        const hasLock = columns.some(c => c.name === 'is_locked');
+        if (!hasLock) db.run("ALTER TABLE videos ADD COLUMN is_locked INTEGER DEFAULT 0");
+      });
+
       db.run(`CREATE TABLE IF NOT EXISTS stream_settings (key TEXT PRIMARY KEY, value TEXT)`);
 
-      // 3. Seeding Data Plans (UPDATE: ID 1 allow 3 streams)
+      // 4. Seeding Data Plans (UPDATE: ID 1 allow 3 streams)
       const plans = [
         [1, 'Paket Free Trial', 2048, 'video,audio', 3, 'Gratis', 'Max 720p, Batasan 5 Jam/hari, Multi-Stream Ready', 5],
         [2, 'Paket Pro (Creator)', 10240, 'video,audio', 5, 'Rp 100.000', 'Max 1080p, 24 Jam Non-stop, Multi-Target', 24],
@@ -101,4 +110,12 @@ const getVideos = (userId) => new Promise((res, rej) => db.all("SELECT * FROM vi
 const saveVideo = (data) => new Promise((res, rej) => db.run("INSERT INTO videos (user_id, filename, path, size, type) VALUES (?, ?, ?, ?, ?)", [data.user_id, data.filename, data.path, data.size, data.type || 'video'], function(err) { err ? rej(err) : res(this.lastID); }));
 const deleteVideo = (id) => new Promise((res, rej) => db.run("DELETE FROM videos WHERE id = ?", [id], (err) => err ? rej(err) : res()));
 
-module.exports = { initDB, getVideos, saveVideo, deleteVideo, db, dbPath };
+const toggleVideoLock = (id, userId) => new Promise((res, rej) => {
+    db.get("SELECT is_locked FROM videos WHERE id = ? AND user_id = ?", [id, userId], (err, row) => {
+        if (err || !row) return rej(new Error('File not found'));
+        const newVal = row.is_locked ? 0 : 1;
+        db.run("UPDATE videos SET is_locked = ? WHERE id = ?", [newVal, id], (err) => err ? rej(err) : res(newVal));
+    });
+});
+
+module.exports = { initDB, getVideos, saveVideo, deleteVideo, toggleVideoLock, db, dbPath };

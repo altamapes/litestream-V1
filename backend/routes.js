@@ -5,7 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs'); 
-const { getVideos, saveVideo, deleteVideo, db } = require('./database');
+const { getVideos, saveVideo, deleteVideo, toggleVideoLock, db } = require('./database');
 const { startStream, stopStream, isStreaming, getActiveStreams } = require('./streamEngine');
 
 // Helper: Reset harian jika tanggal berubah
@@ -111,10 +111,22 @@ router.post('/videos/upload', checkStorageQuota, upload.single('video'), async (
   res.json({ success: true, id, type });
 });
 
+router.put('/videos/:id/lock', async (req, res) => {
+    try {
+        const newState = await toggleVideoLock(req.params.id, req.session.user.id);
+        res.json({ success: true, locked: newState });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.delete('/videos/:id', async (req, res) => {
   const userId = req.session.user.id;
-  db.get("SELECT path, size FROM videos WHERE id = ? AND user_id = ?", [req.params.id, userId], (err, row) => {
+  db.get("SELECT path, size, is_locked FROM videos WHERE id = ? AND user_id = ?", [req.params.id, userId], (err, row) => {
     if (row) {
+      if (row.is_locked) {
+          return res.status(403).json({ error: "File terkunci! Buka gembok dulu." });
+      }
       if (fs.existsSync(row.path)) fs.unlinkSync(row.path);
       db.run("UPDATE users SET storage_used = storage_used - ? WHERE id = ?", [row.size, userId]);
       deleteVideo(req.params.id).then(() => res.json({ success: true }));

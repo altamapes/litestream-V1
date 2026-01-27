@@ -783,8 +783,29 @@
                 <div class="bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50 flex items-center gap-4 group">
                     <input type="checkbox" onchange="toggleSelect(${v.id})" ${selectedMedia.has(v.id) ? 'checked' : ''} class="w-5 h-5 accent-indigo-500 rounded focus:ring-0">
                     <div class="flex-1 truncate text-xs font-bold text-slate-300">${v.filename}</div>
-                    <button onclick="deleteMedia(${v.id})" class="text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-trash"></i></button>
+                    
+                    <button onclick="toggleLock(${v.id})" class="transition-all ${v.is_locked ? 'text-amber-400' : 'text-slate-600 hover:text-amber-400'}" title="${v.is_locked ? 'Unlock Media' : 'Lock Media'}">
+                        <i class="fas ${v.is_locked ? 'fa-lock' : 'fa-lock-open'}"></i>
+                    </button>
+
+                    ${!v.is_locked ? 
+                    `<button onclick="deleteMedia(${v.id})" class="text-rose-500 opacity-0 group-hover:opacity-100 transition-all"><i class="fas fa-trash"></i></button>` 
+                    : '<span class="w-4"></span>'}
                 </div>`).join('');
+        }
+
+        async function toggleLock(id) {
+            try {
+                const res = await fetch(`/api/videos/${id}/lock`, { method: 'PUT' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.locked ? 'Media Protected (Locked)' : 'Media Unlocked');
+                    // Update local state without full fetch if possible, but full fetch is safer for array sync
+                    fetchMedia(); 
+                } else {
+                    showToast(data.error, 'error');
+                }
+            } catch (e) { showToast('Connection Error', 'error'); }
         }
 
         function switchMediaTab(tab) { 
