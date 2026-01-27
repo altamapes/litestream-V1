@@ -79,10 +79,10 @@
             padding-right: 1.5rem;
             text-shadow: 0 1px 2px rgba(0,0,0,0.3);
         }
-        .user-row-item {
-            @apply grid grid-cols-12 gap-4 p-6 items-center border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors;
+        
+        .user-card {
+            @apply bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col md:grid md:grid-cols-12 gap-4 items-center transition-all hover:border-slate-700 hover:shadow-lg hover:shadow-indigo-500/5 mb-3;
         }
-        .user-row-item:last-child { border-bottom: none; }
     </style>
 </head>
 <body class="min-h-screen">
@@ -526,27 +526,24 @@
                 <h2 class="text-2xl font-bold">Admin Panel</h2>
 
                 <!-- User Filter Tabs -->
-                <div class="flex p-1 bg-slate-900 rounded-2xl border border-slate-800 w-fit" id="admin-tabs-container">
-                    <button onclick="filterUsers('all')" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase" id="tab-user-all">ALL USERS</button>
-                    <button onclick="filterUsers('Trial')" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase" id="tab-user-Trial">TRIAL</button>
-                    <button onclick="filterUsers('Starter')" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase" id="tab-user-Starter">STARTER</button>
-                    <button onclick="filterUsers('Radio')" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase" id="tab-user-Radio">RADIO</button>
-                    <button onclick="filterUsers('Sultan')" class="media-subtab px-6 py-2.5 rounded-xl text-xs font-bold transition-all uppercase" id="tab-user-Sultan">SULTAN</button>
+                <div class="flex flex-wrap gap-1 mb-6" id="admin-tabs-container">
+                    <button onclick="filterUsers('all')" class="admin-tab active" id="tab-user-all">ALL USERS</button>
+                    <button onclick="filterUsers('Trial')" class="admin-tab" id="tab-user-Trial">TRIAL</button>
+                    <button onclick="filterUsers('Starter')" class="admin-tab" id="tab-user-Starter">STARTER</button>
+                    <button onclick="filterUsers('Radio')" class="admin-tab" id="tab-user-Radio">RADIO</button>
+                    <button onclick="filterUsers('Sultan')" class="admin-tab" id="tab-user-Sultan">SULTAN</button>
                 </div>
 
-                <!-- Admin User List Container (Card Style) -->
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
-                    <!-- Admin Card Header -->
-                    <div class="hidden md:flex justify-between px-6 py-4 bg-slate-900/50 border-b border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        <div class="w-1/3 pl-2">User</div>
-                        <div class="w-1/3 text-center">Status / Expire</div>
-                        <div class="w-1/3 text-right pr-2">Actions</div>
-                    </div>
+                <!-- Admin User List Header (Desktop Only) -->
+                <div class="hidden md:grid grid-cols-12 gap-4 px-6 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                    <div class="col-span-4">User Details</div>
+                    <div class="col-span-4 text-center">Subscription Status</div>
+                    <div class="col-span-4 text-right">Actions</div>
+                </div>
 
-                    <!-- User Card List -->
-                    <div id="user-list-container">
-                        <!-- Cards Injected via JS -->
-                    </div>
+                <!-- Admin User List Container (Individual Card Style) -->
+                <div id="user-list-container" class="space-y-4">
+                    <!-- Cards Injected via JS -->
                 </div>
             </div>
         </main>
@@ -1011,27 +1008,33 @@
                 const planNameUpper = (u.plan_name || 'Standard').toUpperCase();
                 
                 return `
-                <div class="user-row-item">
-                    <!-- Left: User Info -->
-                    <div class="col-span-12 md:col-span-4 flex flex-col pl-2">
-                        <span class="text-sm font-bold text-white tracking-wide">${u.username}</span>
-                        <span class="text-[10px] font-bold text-indigo-400 uppercase mt-0.5 tracking-wider">${planNameUpper} STREAM</span>
+                <div class="user-card group">
+                    <!-- User Info -->
+                    <div class="col-span-12 md:col-span-4 flex items-center gap-4 w-full">
+                        <div class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-indigo-500 font-bold text-lg border border-slate-700">
+                            ${u.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <div class="text-sm font-bold text-white">${u.username}</div>
+                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">${planNameUpper}</div>
+                        </div>
                     </div>
 
-                    <!-- Center: Status -->
-                    <div class="col-span-6 md:col-span-4 text-center">
-                        <span class="text-xs font-bold text-emerald-400 font-mono">
-                            Exp: ${mockDate}
+                    <!-- Status -->
+                    <div class="col-span-6 md:col-span-4 flex flex-col items-start md:items-center justify-center w-full border-t md:border-t-0 border-slate-800 pt-4 md:pt-0 mt-2 md:mt-0">
+                        <span class="text-[10px] text-slate-500 font-bold uppercase mb-1 md:hidden">Expire Date</span>
+                        <span class="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
+                            ${mockDate}
                         </span>
                     </div>
 
-                    <!-- Right: Actions -->
-                    <div class="col-span-6 md:col-span-4 flex justify-end gap-2 pr-2">
-                        <button onclick="alert('Manage ${u.username}')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-lg text-[10px] font-bold uppercase shadow-lg shadow-indigo-600/30 transition-all tracking-wider">
-                            MANAGE
+                    <!-- Actions -->
+                    <div class="col-span-6 md:col-span-4 flex justify-end items-center gap-2 w-full border-t md:border-t-0 border-slate-800 pt-4 md:pt-0 mt-2 md:mt-0">
+                        <button onclick="alert('Manage ${u.username}')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-indigo-600 text-slate-400 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-indigo-500">
+                            Manage
                         </button>
-                        <button onclick="alert('Delete ${u.username}')" class="bg-rose-600 hover:bg-rose-500 text-white w-9 h-8 rounded-lg flex items-center justify-center shadow-lg shadow-rose-600/30 transition-all">
-                            <i class="fas fa-trash text-xs"></i>
+                        <button onclick="alert('Delete ${u.username}')" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white flex items-center justify-center transition-all border border-slate-700 hover:border-rose-500">
+                            <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
                 </div>
