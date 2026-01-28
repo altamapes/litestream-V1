@@ -7,7 +7,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const ffmpeg = require('fluent-ffmpeg'); // ADDED
 const { getVideos, saveVideo, deleteVideo, toggleVideoLock, db } = require('./database');
-const { startStream, stopStream, isStreaming, getActiveStreams } = require('./streamEngine');
+const { startStream, stopStream, isStreaming, getActiveStreams, killZombieProcesses } = require('./streamEngine');
 
 // Helper: Reset harian jika tanggal berubah, KECUALI paket tipe 'total'
 const syncUserUsage = (userId) => {
@@ -250,6 +250,15 @@ router.post('/stream/stop', (req, res) => {
   
   const success = stopStream(streamId);
   res.json({ success });
+});
+
+router.post('/stream/kill-zombies', async (req, res) => {
+    try {
+        await killZombieProcesses();
+        res.json({ success: true, message: "All streams forced to stop. System reset." });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 router.get('/settings', (req, res) => {

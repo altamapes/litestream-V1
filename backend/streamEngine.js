@@ -3,10 +3,23 @@ const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const { PassThrough } = require('stream');
+const { exec } = require('child_process');
 const { db } = require('./database');
 
 // Store active streams: key = streamId, value = { command, userId, playlistPath, activeInputStream, loop: boolean }
 const activeStreams = new Map();
+
+const killZombieProcesses = () => {
+    return new Promise((resolve) => {
+         console.log('Cleaning up zombie FFmpeg processes...');
+         // Pkill akan mematikan semua proses ffmpeg di sistem agar tidak ada stream hantu
+         exec('pkill -f ffmpeg', (err, stdout, stderr) => {
+             activeStreams.clear();
+             console.log('System clean. All streams reset.');
+             resolve();
+         });
+    });
+}
 
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
   const { userId, loop = false, coverImagePath, title, description } = options;
@@ -260,4 +273,4 @@ const getActiveStreams = (userId) => {
 
 const isStreaming = () => activeStreams.size > 0;
 
-module.exports = { startStream, stopStream, isStreaming, getActiveStreams };
+module.exports = { startStream, stopStream, isStreaming, getActiveStreams, killZombieProcesses };

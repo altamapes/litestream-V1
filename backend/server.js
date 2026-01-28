@@ -10,6 +10,7 @@ const session = require('express-session');
 const SQLiteStore = require('connect-sqlite3')(session);
 const bcrypt = require('bcryptjs');
 const { initDB, db } = require('./database');
+const { killZombieProcesses } = require('./streamEngine');
 
 dotenv.config();
 
@@ -125,6 +126,8 @@ app.use('/api', (req, res, next) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, '../index.html')));
 app.use(express.static(path.join(__dirname, '../')));
 
-initDB().then(() => {
+initDB().then(async () => {
+  // CLEAN SLATE: Matikan semua ffmpeg saat server nyala
+  await killZombieProcesses();
   server.listen(3000, '0.0.0.0', () => console.log("LITESTREAM READY: Port 3000"));
 });
