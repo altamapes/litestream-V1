@@ -20,20 +20,23 @@ const killZombieProcesses = () => {
 }
 
 // ============================================================================
-// STRATEGI PAMUNGKAS: PSEUDO-INFINITE PLAYLIST
+// GENERATOR PLAYLIST ANTI-PUTUS (Brute Force Loop)
 // ============================================================================
 const createInfinitePlaylistFile = (files, outputPath, loop) => {
-    // Gunakan path absolut yang sangat aman
+    // 1. Pastikan path absolut dan escape karakter aneh untuk FFmpeg concat demuxer
     const safeFiles = files.map(f => {
+        // Jika path belum absolut, gabungkan dengan folder uploads
         const absPath = path.isAbsolute(f) ? f : path.join(__dirname, 'uploads', path.basename(f));
-        // Escape single quotes: ' -> '\''
+        // Escape single quote (') menjadi ('\'') agar FFmpeg tidak error membaca nama file
         return `file '${absPath.replace(/'/g, "'\\''")}'`;
     });
     
     let content = [];
     
-    // Jika loop, kita duplikasi list agar menjadi sangat panjang.
-    // Kita kurangi sedikit jumlah loop tapi pastikan stream_loop flag aktif juga.
+    // 2. Logika Loop:
+    // Jika Loop aktif, kita duplikasi daftar lagu/video sebanyak 100 kali.
+    // Ini menciptakan "Virtual Timeline" yang sangat panjang (ratusan jam).
+    // FFmpeg melihatnya sebagai satu file panjang, sehingga timestamp tidak pernah reset.
     const loopCount = loop ? 100 : 1; 
     
     for (let i = 0; i < loopCount; i++) {
@@ -48,8 +51,10 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
   const { userId, loop = false, coverImagePath, title } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
   
-  // Filter file MP3
-  const mp3Files = files.filter(f => f.toLowerCase().endsWith('.mp3'));
+  // DETEKSI MODE:
+  // Jika ada coverImagePath, berarti ini RADIO MODE (Mp3 + Gambar).
+  // Jika tidak ada cover, berarti ini VIDEO MODE (MP4).
+  const isRadioMode = !!(coverImagePath && fs.existsSync(coverImagePath));
   
   const streamId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   
@@ -59,97 +64,99 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let playlistPath = null;
     let hasStarted = false;
 
-    console.log(`[Stream ${streamId}] Starting... LOOP: ${loop}`);
+    console.log(`[Stream ${streamId}] Mode: ${isRadioMode ? 'RADIO (Image+Audio)' : 'VIDEO (Movie)'} | Loop: ${loop}`);
 
-    // ---------------------------------------------------------
-    // INPUT 0: VISUAL (GAMBAR/VIDEO)
-    // ---------------------------------------------------------
-    if (coverImagePath && fs.existsSync(coverImagePath)) {
-        if (coverImagePath.endsWith('.mp4')) {
-             command.input(coverImagePath).inputOptions([
-                 '-stream_loop', '-1', // Loop video background
-                 '-re'                 // Realtime reading
-             ]);
-        } else {
-             command.input(coverImagePath).inputOptions([
-                 '-loop', '1',       // Loop gambar selamanya
-                 '-re',              // Realtime Reading (PENTING)
-                 '-framerate', '25'  // 25 FPS (Standard PAL, lebih aman)
-             ]);
-        }
-    } else {
-        command.input('color=c=black:s=1280x720:r=25').inputFormat('lavfi').inputOptions(['-re']);
-    }
+    // Persiapkan Playlist File (Untuk Audio maupun Video)
+    playlistPath = path.join(__dirname, 'uploads', `playlist_${streamId}.txt`);
+    createInfinitePlaylistFile(files, playlistPath, loop);
 
-    // ---------------------------------------------------------
-    // INPUT 1: AUDIO (PLAYLIST)
-    // ---------------------------------------------------------
-    if (mp3Files.length > 0) {
-        playlistPath = path.join(__dirname, 'uploads', `playlist_${streamId}.txt`);
-        createInfinitePlaylistFile(mp3Files, playlistPath, loop);
-
-        // Opsi Input Audio
-        const audioInputOptions = [
-            '-f', 'concat',
-            '-safe', '0'
-        ];
-
-        // FORCE LOOP FLAG pada demuxer level juga
-        if (loop) {
-            audioInputOptions.unshift('-stream_loop', '-1'); 
-        }
-
-        command.input(playlistPath).inputOptions(audioInputOptions);
-    } else {
-        command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi');
-    }
-
-    // ---------------------------------------------------------
-    // FILTERS & MAPPING
-    // ---------------------------------------------------------
+    // ==================================================
+    // KONFIGURASI INPUT
+    // ==================================================
     
-    const filters = [
-        // Video
-        { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
-        { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
-        { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
+    if (isRadioMode) {
+        // --- MODE 1: RADIO (Gambar + Audio) ---
+        
+        // INPUT 0: Visual (Gambar/Video Loop)
+        if (coverImagePath.endsWith('.mp4')) {
+             command.input(coverImagePath).inputOptions(['-stream_loop', '-1', '-re']);
+        } else {
+             // Gambar statis diloop
+             command.input(coverImagePath).inputOptions(['-loop', '1', '-re', '-framerate', '25']);
+        }
 
-        // Audio
-        { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'a_out' }
-    ];
+        // INPUT 1: Playlist Audio (MP3s)
+        command.input(playlistPath).inputOptions([
+            '-f', 'concat',
+            '-safe', '0',
+            // Jika user minta loop, kita juga pasang flag stream_loop sebagai backup layer kedua
+            ...(loop ? ['-stream_loop', '-1'] : []) 
+        ]);
 
-    command.complexFilter(filters);
+        // FILTER: Ambil Video dari Input 0, Audio dari Input 1
+        const filters = [
+            { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
+            { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
+            { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
+            { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'a_out' }
+        ];
+        command.complexFilter(filters);
 
-    // ---------------------------------------------------------
-    // OUTPUT OPTIONS
-    // ---------------------------------------------------------
+    } else {
+        // --- MODE 2: VIDEO (Film/Clip) ---
+        
+        // INPUT 0: Playlist Video (MP4s)
+        // Kita gunakan -re (realtime) di sini karena videonya sendiri yang menentukan durasi
+        command.input(playlistPath).inputOptions([
+            '-f', 'concat',
+            '-safe', '0',
+            '-re',
+            ...(loop ? ['-stream_loop', '-1'] : [])
+        ]);
+
+        // FILTER: Ambil Video & Audio dari Input 0 (Satu sumber)
+        const filters = [
+            { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
+            { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
+            { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
+            { filter: 'aresample', options: '44100', inputs: '0:a', outputs: 'a_out' }
+        ];
+        command.complexFilter(filters);
+    }
+
+    // ==================================================
+    // OUTPUT OPTIONS (Standard YouTube/FB/Twitch)
+    // ==================================================
     command.outputOptions([
         '-map [v_out]', '-map [a_out]',
         
+        // Video Codec
         '-c:v libx264', 
-        '-preset ultrafast', 
+        '-preset ultrafast', // Paling ringan untuk VPS
         '-tune zerolatency',
-        '-g 50',             // Keyframe per 2 detik (25fps * 2)
-        '-b:v 1500k',        
-        '-maxrate 2000k',
-        '-bufsize 4000k', 
+        '-g 50',             // Keyframe wajib tiap 2 detik
+        '-b:v 2000k',        // Bitrate dinaikkan sedikit agar gambar tajam
+        '-maxrate 2500k',
+        '-bufsize 5000k', 
 
+        // Audio Codec
         '-c:a aac', 
         '-b:a 128k', 
         '-ar 44100',
         '-ac 2',
 
+        // Format FLV untuk RTMP
         '-f flv',
         '-flvflags no_duration_filesize'
     ]);
 
-    // ---------------------------------------------------------
-    // EVENTS
-    // ---------------------------------------------------------
+    // ==================================================
+    // EVENT HANDLERS
+    // ==================================================
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream Started: ${streamId}`);
-        // console.log("Command:", commandLine); // Debugging
+        // console.log("CMD:", commandLine);
         hasStarted = true;
         
         activeStreams.set(streamId, { 
@@ -158,16 +165,17 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             playlistPath, 
             startTime: Date.now(), 
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
-            name: title || `Radio ${streamId.substr(0,4)}`
+            name: title || `Stream ${streamId.substr(0,4)}`
         });
 
         if (global.io) {
-            global.io.emit('log', { type: 'start', message: `Radio Started.`, streamId });
+            global.io.emit('log', { type: 'start', message: `Stream Started.`, streamId });
             global.io.emit('stream_started', { streamId });
         }
         resolve(streamId);
       })
       .on('progress', (progress) => {
+        // Hitung penggunaan durasi user
         const currentTimemark = progress.timemark; 
         let totalSeconds = 0;
         if(currentTimemark) {
