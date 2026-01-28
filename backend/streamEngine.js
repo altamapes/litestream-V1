@@ -89,7 +89,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']);
       
-      // FIX: Hapus argumen kedua (mapping array) untuk mencegah error 'label does not exist'
       command.complexFilter([
           { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
           { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
@@ -99,7 +98,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ]);
     } 
     // =========================================================
-    // 2. VIDEO MODE (MP4) - ROBUST FIX FOR 8kbps AUDIO
+    // 2. VIDEO MODE (MP4) - ROBUST AUDIO FIX
     // =========================================================
     else {
       let hasFileAudio = false;
@@ -130,7 +129,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           command.input(currentPlaylistPath).inputOptions(['-f concat', '-safe 0', '-re']);
       }
 
-      // Input #1: Silence (Selalu ada sebagai cadangan/mixer)
+      // Input #1: Silence (Sebagai cadangan jika audio gagal decode)
       command.input('anullsrc=channel_layout=stereo:sample_rate=44100')
              .inputFormat('lavfi');
 
@@ -143,22 +142,37 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ];
 
       if (hasFileAudio) {
-          // KEY FIX: async=1 handle desync dari audio 8kbps yang jelek
-          // 0:a mengacu pada audio dari file input utama
-          filters.push({ filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' });
-          filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
+          // FIX AUDIO BISU:
+          // 1. aresample=async=1: Menangani desync audio bitrate rendah
+          // 2. aformat=sample_fmts=fltp:channel_layouts=stereo: Memaksa format internal FFmpeg agar kompatibel dengan encoder AAC
+          // 3. volume=1.0: Memastikan gain tidak nol
+          filters.push({ 
+              filter: 'aresample', 
+              options: '44100:async=1', 
+              inputs: '0:a', 
+              outputs: 'resampled' 
+          });
+          filters.push({ 
+              filter: 'aformat', 
+              options: 'sample_fmts=fltp:channel_layouts=stereo', 
+              inputs: 'resampled', 
+              outputs: 'formatted' 
+          });
+          filters.push({ 
+              filter: 'asetpts', 
+              options: 'N/SR/TB', 
+              inputs: 'formatted', 
+              outputs: 'a_out' 
+          });
       } else {
-          // Gunakan silence dari Input #1 (1:a) jika tidak ada audio
+          // Fallback ke silence jika file benar-benar bisu
           filters.push({ filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
       }
 
-      // FIX UTAMA: Hapus argumen kedua (mapping array) di sini.
-      // Kita sudah mendefinisikan 'v_out' dan 'a_out' di dalam objek filter di atas.
-      // Menambahkan array di sini membuat fluent-ffmpeg mencoba mapping ganda yang menyebabkan error.
       command.complexFilter(filters);
       
-      // KEY FIX: Menambah ukuran queue untuk looping file dengan bitrate aneh
+      // Mencegah buffer underrun pada file bitrate rendah
       command.addOption('-max_muxing_queue_size', '4096');
     }
 
@@ -170,7 +184,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-pix_fmt yuv420p',
         '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k',
         '-nal-hrd cbr',
-        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2', 
+        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2', // Force Stereo 128kbps output
         '-f flv', '-flvflags no_duration_filesize'
     ]);
 
@@ -191,7 +205,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         resolve(streamId);
       })
       .on('progress', (progress) => {
-        // ... Logika Kuota ...
         const currentTimemark = progress.timemark; 
         let totalSeconds = 0;
         if(currentTimemark) {
