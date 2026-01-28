@@ -35,55 +35,38 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let activeInputStream = null;
     let hasStarted = false;
 
-    // --- AUDIO HANDLING (INFINITE PIPE METHOD) ---
+    // --- AUDIO HANDLING (INFINITE PIPE METHOD) - SUDAH STABIL ---
     if (isAllAudio) {
-      
-      // 1. INPUT IMAGE (Background) - Infinite Loop Video
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
       } else {
         command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 25', '-re']); 
       }
 
-      // 2. INPUT AUDIO (The "Infinite" Pipe)
-      // Kita tidak menggunakan -stream_loop milik FFmpeg.
-      // Kita memberi makan FFmpeg data audio terus menerus lewat Pipe.
       const mixedStream = new PassThrough();
       activeInputStream = mixedStream;
       let fileIndex = 0;
 
       const playNextSong = () => {
-        // Cek jika stream sudah dimatikan user
         if (hasStarted && !activeStreams.has(streamId)) {
             try { mixedStream.end(); } catch(e){}
             return;
         }
-
         if (fileIndex >= files.length) {
             if (loop) {
-                // RESET ke awal array, tapi stream terus nyambung
                 fileIndex = 0;
-                console.log(`[Stream ${streamId}] Playlist finished. Looping back to start (NodeJS Pipe)...`);
             } else {
-                mixedStream.end(); // Selesai beneran
+                mixedStream.end(); 
                 return;
             }
         }
-
         const currentFile = files[fileIndex];
         const songStream = fs.createReadStream(currentFile);
-        
-        // Pipe lagu ke mixedStream. 
-        // PENTING: { end: false } agar PassThrough tidak tutup saat 1 lagu habis
         songStream.pipe(mixedStream, { end: false });
-
         songStream.on('end', () => {
            fileIndex++;
-           // Langsung sambung lagu berikutnya (atau ulang ke awal)
-           // Beri sedikit delay 10ms untuk memastika buffer aman
            setTimeout(playNextSong, 10);
         });
-        
         songStream.on('error', (err) => {
            console.error(`Error reading file ${currentFile}:`, err);
            fileIndex++;
@@ -91,65 +74,119 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         });
       };
 
-      // Mulai memompa data audio
       playNextSong();
 
-      // Masukkan Stream Node.js sebagai Input FFmpeg
       command.input(mixedStream)
-             .inputFormat('mp3') // Wajib beri tahu format karena ini Stream, bukan File
-             .inputOptions(['-re']); // Baca sesuai kecepatan real-time (agar CPU tidak jebol)
+             .inputFormat('mp3')
+             .inputOptions(['-re']);
 
-      // 3. FILTER & ENCODING
-      // Walaupun streamnya "infinite", kita tetap pakai asetpts untuk keamanan ekstra
-      // agar timestamp benar-benar sinkron dengan video background yang berjalan.
       command.complexFilter([
-          // Video
           { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
           { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
-          { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' }, // Hapus setpts video karena -loop 1 image sudah handle
-          
-          // Audio
+          { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
           { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' },
-          { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' } // Pastikan timestamp linear
+          { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
       ], ['v_out', 'a_out']);
 
       command.outputOptions([
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
         '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', 
         '-b:v 3000k', '-minrate 3000k', '-maxrate 3000k', '-bufsize 6000k', '-nal-hrd cbr', 
-        
         '-c:a aac', '-b:a 128k', '-ar 44100',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
     } 
-    // --- VIDEO HANDLING ---
+    // --- VIDEO HANDLING (NEW ROBUST MP4 STRATEGY) ---
     else {
-      // Logic Video tetap sama, karena concat demuxer video lebih stabil dari raw stream
-      const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
+      // Strategi: Daripada pakai -stream_loop milik FFmpeg yang sering error timestamp saat restart,
+      // Kita buat Playlist .txt yang isinya kita duplikasi 1000x jika user memilih Loop.
+      // Ini membuat FFmpeg mengira videonya panjang sekali (berhari-hari), padahal cuma ngulang.
       
-      if (files.length === 1) {
-          command.input(files[0]);
-          const inputOpts = ['-re']; 
-          if (loop) inputOpts.unshift('-stream_loop', '-1');
-          command.inputOptions(inputOpts);
-      } else {
-          const uniqueId = streamId;
-          currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
-          const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
-          fs.writeFileSync(currentPlaylistPath, playlistContent);
-          const videoInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
-          if (loop) videoInputOpts.unshift('-stream_loop', '-1');
-          command.input(currentPlaylistPath).inputOptions(videoInputOpts);
+      const uniqueId = streamId;
+      currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
+      
+      // Bersihkan path file agar aman di txt
+      const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
+      let playlistContent = safeFiles.join('\n');
+
+      if (loop) {
+          // THE HACK: Copy-paste daftar file sebanyak 5000 kali ke dalam file .txt
+          // Ini sangat ringan (cuma teks) tapi efeknya stream bisa jalan berminggu-minggu tanpa putus.
+          const oneSet = '\n' + playlistContent;
+          // Batasi max pengulangan agar file txt tidak terlalu gila besarnya (misal stream 24 jam x 7 hari cukup)
+          const loopCount = 2000; 
+          
+          console.log(`[Stream ${streamId}] Generating infinite playlist (${loopCount} loops)...`);
+          for(let i=0; i < loopCount; i++) {
+              playlistContent += oneSet;
+          }
       }
+
+      fs.writeFileSync(currentPlaylistPath, playlistContent);
+
+      // Gunakan Concat Demuxer
+      // PENTING: Jangan pakai -stream_loop di sini, karena playlistnya sudah kita 'loop' manual di text
+      command.input(currentPlaylistPath)
+             .inputOptions([
+                 '-f', 'concat', 
+                 '-safe', '0', 
+                 '-re' // Read realtime agar tidak terlalu cepat
+             ]);
       
+      // Video Filters: FORCE TIMESTAMP REGENERATION
+      // Ini wajib agar saat transisi dari baris 1 ke baris 2 di playlist, waktunya nyambung mulus
+      command.complexFilter([
+         // 1. Video Processing
+         {
+            filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease',
+            inputs: '0:v', outputs: 'scaled'
+         },
+         {
+            filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
+            inputs: 'scaled', outputs: 'padded'
+         },
+         {
+            filter: 'format', options: 'yuv420p',
+            inputs: 'padded', outputs: 'formatted'
+         },
+         {
+            filter: 'setpts', options: 'N/FRAME_RATE/TB', // Buat ulang waktu video berdasarkan frame count
+            inputs: 'formatted', outputs: 'v_out'
+         },
+         
+         // 2. Audio Processing
+         {
+            filter: 'aresample', options: '44100', // Pastikan sample rate konsisten
+            inputs: '0:a', outputs: 'resampled'
+         },
+         {
+            filter: 'asetpts', options: 'N/SR/TB', // Buat ulang waktu audio sample count
+            inputs: 'resampled', outputs: 'a_out'
+         }
+      ], ['v_out', 'a_out']); // Map output filter
+
       command.outputOptions([
-        '-c:v libx264', '-preset ultrafast', '-tune zerolatency',
-        `-vf ${videoFilter}`, '-pix_fmt yuv420p', '-r 30', '-g 60',            
-        '-b:v 3000k', '-minrate 3000k', '-maxrate 3000k', '-bufsize 6000k', '-nal-hrd cbr',     
-        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',            
-        '-af aresample=async=1000,asetpts=N/SR/TB', 
-        '-f flv', '-flvflags no_duration_filesize'
+        // Mapping Eksplisit: Pastikan encoder mengambil output dari Filter, BUKAN dari input mentah
+        '-map [v_out]', 
+        '-map [a_out]',
+        
+        // Video Encoder Config
+        '-c:v libx264', 
+        '-preset ultrafast', // CPU Saver
+        '-tune zerolatency',
+        '-r 30', '-g 60', // Keyframe tiap 2 detik (Wajib buat YouTube)
+        
+        // Bitrate Control (CBR - Constant Bitrate)
+        '-b:v 3000k', '-minrate 3000k', '-maxrate 3000k', '-bufsize 6000k',
+        '-nal-hrd cbr',
+        
+        // Audio Encoder Config
+        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',
+        
+        // Output Format & Safety
+        '-f flv', 
+        '-flvflags no_duration_filesize'
       ]);
     }
 
@@ -157,12 +194,13 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream ${streamId} started`);
+        // console.log(`[Cmd] ${commandLine}`); // Uncomment for debug
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
             userId, 
             playlistPath: currentPlaylistPath,
-            activeInputStream, // Simpan referensi stream Node.js agar bisa di-kill
+            activeInputStream, 
             startTime: Date.now(),
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : (rtmpUrl.includes('facebook') ? 'Facebook' : (rtmpUrl.includes('twitch') ? 'Twitch' : 'Custom')),
             name: title || `Stream ${streamId.substr(0,4)}`,
