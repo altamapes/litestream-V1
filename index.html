@@ -65,6 +65,11 @@
             background-color: #11151d;
             border: 1px solid #1e293b;
         }
+        
+        /* Digital Clock Glow */
+        .digital-glow {
+            text-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+        }
     </style>
 </head>
 <body class="min-h-screen">
@@ -400,13 +405,21 @@
                         </div>
                         <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="dash-cpu-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
                     </div>
-                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
-                        <div class="flex justify-between items-start mb-4">
-                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Memory</p><h3 id="dash-mem-val" class="text-xl font-bold text-white mt-2">0 MB <span class="text-slate-500 text-sm">/ 1 GB</span></h3></div>
-                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 transition-all group-hover:bg-indigo-500/20 group-hover:text-indigo-400"><i class="fas fa-memory"></i></div>
+                    
+                    <!-- REPLACED MEMORY CARD WITH DIGITAL CLOCK -->
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group flex flex-col justify-between">
+                        <div class="flex justify-between items-start mb-2">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Server Time</p>
+                            <div class="w-10 h-10 rounded-lg bg-slate-700/50 flex items-center justify-center text-slate-400 transition-all group-hover:bg-indigo-500/20 group-hover:text-indigo-400">
+                                <i class="fas fa-clock"></i>
+                            </div>
                         </div>
-                        <div class="w-full bg-slate-700 rounded-full h-1.5"><div id="dash-mem-bar" class="bg-indigo-500 h-1.5 rounded-full" style="width: 0%"></div></div>
+                        <div class="text-center">
+                            <h3 id="dash-clock-time" class="text-3xl font-bold text-white font-mono tracking-widest digital-glow">00:00:00</h3>
+                            <p id="dash-clock-date" class="text-xs text-slate-500 font-bold uppercase mt-1">Loading...</p>
+                        </div>
                     </div>
+
                     <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 relative overflow-hidden group">
                         <div class="flex justify-between items-start mb-4">
                             <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Disk Usage</p><h3 id="dash-disk-val" class="text-xl font-bold text-white mt-2">0 GB <span class="text-slate-500 text-sm" id="dash-disk-max">/ 0 GB</span></h3></div>
@@ -670,6 +683,7 @@
             if (currentUser) document.getElementById('profile-username').value = currentUser.username;
             fetchMedia(); fetchSettings(); fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
             startMockStats();
+            startDigitalClock(); // START CLOCK
         }
 
         function updateUIInfo() {
@@ -696,6 +710,23 @@
             document.getElementById('admin-time-text').textContent = `${usedHours} / 24 Hours`;
             document.getElementById('admin-time-bar').style.width = Math.min((usedSecs / (24 * 3600) * 100), 100) + '%';
         }
+        
+        // Digital Clock Logic
+        function startDigitalClock() {
+            const update = () => {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
+                const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+                
+                const timeEl = document.getElementById('dash-clock-time');
+                const dateEl = document.getElementById('dash-clock-date');
+                
+                if (timeEl) timeEl.textContent = timeStr;
+                if (dateEl) dateEl.textContent = dateStr;
+            };
+            update(); // Run immediately
+            setInterval(update, 1000);
+        }
 
         function startMockStats() {
             setInterval(() => {
@@ -703,6 +734,7 @@
                 const cpuVal = Math.floor(baseCpu + (Math.random() * 10));
                 document.getElementById('dash-cpu-val').textContent = cpuVal + '%';
                 document.getElementById('dash-cpu-bar').style.width = cpuVal + '%';
+                // Removed Memory Mock Update
             }, 2000);
         }
 
