@@ -35,7 +35,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let activeInputStream = null;
     let hasStarted = false;
 
-    // --- AUDIO HANDLING (INFINITE PIPE METHOD) - SUDAH STABIL ---
+    // --- AUDIO HANDLING (STABIL: PAKE NODE PIPE) ---
     if (isAllAudio) {
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
@@ -97,47 +97,48 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ]);
 
     } 
-    // --- VIDEO HANDLING (NEW ROBUST MP4 STRATEGY) ---
+    // --- VIDEO HANDLING (STABIL: HYBRID MODE) ---
     else {
-      // Strategi: Daripada pakai -stream_loop milik FFmpeg yang sering error timestamp saat restart,
-      // Kita buat Playlist .txt yang isinya kita duplikasi 1000x jika user memilih Loop.
-      // Ini membuat FFmpeg mengira videonya panjang sekali (berhari-hari), padahal cuma ngulang.
       
-      const uniqueId = streamId;
-      currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
-      
-      // Bersihkan path file agar aman di txt
-      const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
-      let playlistContent = safeFiles.join('\n');
-
-      if (loop) {
-          // THE HACK: Copy-paste daftar file sebanyak 5000 kali ke dalam file .txt
-          // Ini sangat ringan (cuma teks) tapi efeknya stream bisa jalan berminggu-minggu tanpa putus.
-          const oneSet = '\n' + playlistContent;
-          // Batasi max pengulangan agar file txt tidak terlalu gila besarnya (misal stream 24 jam x 7 hari cukup)
-          const loopCount = 2000; 
+      // KASUS 1: SINGLE FILE & LOOP (Paling Umum)
+      // Gunakan Native Loop FFmpeg tapi dengan flag +genpts untuk fix timestamp
+      if (files.length === 1 && loop) {
+          command.input(files[0])
+                 .inputOptions([
+                     '-stream_loop', '-1', // Native Loop
+                     '-re',                // Read Realtime
+                     '-fflags', '+genpts'  // Generate PTS baru saat loop (PENTING!)
+                 ]);
+      } 
+      // KASUS 2: MULTI FILE / NO LOOP
+      else {
+          const uniqueId = streamId;
+          currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           
-          console.log(`[Stream ${streamId}] Generating infinite playlist (${loopCount} loops)...`);
-          for(let i=0; i < loopCount; i++) {
-              playlistContent += oneSet;
+          let playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
+          
+          // Jika loop playlist, kita duplikasi isi playlist di txt (Ghost Playlist)
+          // Ini lebih aman untuk playlist MP4 daripada stream_loop pada concat demuxer
+          if (loop) {
+             const original = '\n' + playlistContent;
+             // Ulangi 500x cukup untuk streaming berhari-hari
+             for(let i=0; i<500; i++) playlistContent += original;
           }
+
+          fs.writeFileSync(currentPlaylistPath, playlistContent);
+
+          command.input(currentPlaylistPath)
+                 .inputOptions([
+                     '-f', 'concat', 
+                     '-safe', '0', 
+                     '-re'
+                 ]);
       }
-
-      fs.writeFileSync(currentPlaylistPath, playlistContent);
-
-      // Gunakan Concat Demuxer
-      // PENTING: Jangan pakai -stream_loop di sini, karena playlistnya sudah kita 'loop' manual di text
-      command.input(currentPlaylistPath)
-             .inputOptions([
-                 '-f', 'concat', 
-                 '-safe', '0', 
-                 '-re' // Read realtime agar tidak terlalu cepat
-             ]);
       
-      // Video Filters: FORCE TIMESTAMP REGENERATION
-      // Ini wajib agar saat transisi dari baris 1 ke baris 2 di playlist, waktunya nyambung mulus
+      // UNIVERSAL VIDEO FILTER
+      // Memaksa FPS stabil ke 30 dan membuat timestamp baru
       command.complexFilter([
-         // 1. Video Processing
+         // 1. Video: Scale -> Pad -> Format -> FPS -> SetPTS
          {
             filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease',
             inputs: '0:v', outputs: 'scaled'
@@ -151,42 +152,36 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             inputs: 'padded', outputs: 'formatted'
          },
          {
-            filter: 'setpts', options: 'N/FRAME_RATE/TB', // Buat ulang waktu video berdasarkan frame count
-            inputs: 'formatted', outputs: 'v_out'
+             filter: 'fps', options: 'fps=30', // PAKSA STABIL 30 FPS
+             inputs: 'formatted', outputs: 'fps_fixed'
+         },
+         {
+            filter: 'setpts', options: 'N/FRAME_RATE/TB', // Buat ulang waktu video dari 0
+            inputs: 'fps_fixed', outputs: 'v_out'
          },
          
-         // 2. Audio Processing
+         // 2. Audio: Resample + Async Sync + SetPTS
          {
-            filter: 'aresample', options: '44100', // Pastikan sample rate konsisten
+            filter: 'aresample', options: '44100:async=1', // Async=1 memperbaiki drift audio saat loop
             inputs: '0:a', outputs: 'resampled'
          },
          {
             filter: 'asetpts', options: 'N/SR/TB', // Buat ulang waktu audio sample count
             inputs: 'resampled', outputs: 'a_out'
          }
-      ], ['v_out', 'a_out']); // Map output filter
+      ], ['v_out', 'a_out']);
 
       command.outputOptions([
-        // Mapping Eksplisit: Pastikan encoder mengambil output dari Filter, BUKAN dari input mentah
-        '-map [v_out]', 
-        '-map [a_out]',
+        '-map [v_out]', '-map [a_out]', // Ambil hasil filter
         
-        // Video Encoder Config
-        '-c:v libx264', 
-        '-preset ultrafast', // CPU Saver
-        '-tune zerolatency',
-        '-r 30', '-g 60', // Keyframe tiap 2 detik (Wajib buat YouTube)
+        '-c:v libx264', '-preset ultrafast', '-tune zerolatency',
+        '-r 30', '-g 60', // Keyframe interval 2 detik (Wajib YouTube)
         
-        // Bitrate Control (CBR - Constant Bitrate)
-        '-b:v 3000k', '-minrate 3000k', '-maxrate 3000k', '-bufsize 6000k',
-        '-nal-hrd cbr',
+        '-b:v 3000k', '-minrate 3000k', '-maxrate 3000k', '-bufsize 6000k', '-nal-hrd cbr',
         
-        // Audio Encoder Config
         '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',
         
-        // Output Format & Safety
-        '-f flv', 
-        '-flvflags no_duration_filesize'
+        '-f flv', '-flvflags no_duration_filesize'
       ]);
     }
 
@@ -194,7 +189,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream ${streamId} started`);
-        // console.log(`[Cmd] ${commandLine}`); // Uncomment for debug
+        // console.log(`[Cmd] ${commandLine}`); 
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
@@ -202,9 +197,8 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             playlistPath: currentPlaylistPath,
             activeInputStream, 
             startTime: Date.now(),
-            platform: rtmpUrl.includes('youtube') ? 'YouTube' : (rtmpUrl.includes('facebook') ? 'Facebook' : (rtmpUrl.includes('twitch') ? 'Twitch' : 'Custom')),
-            name: title || `Stream ${streamId.substr(0,4)}`,
-            description: description || ''
+            platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
+            name: title || `Stream ${streamId.substr(0,4)}`
         });
         
         if (global.io) {
@@ -215,8 +209,15 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       })
       .on('progress', (progress) => {
         const currentTimemark = progress.timemark; 
-        const parts = currentTimemark.split(':');
-        const totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
+        // Parsing timemark sederhana
+        let totalSeconds = 0;
+        if(currentTimemark) {
+            const parts = currentTimemark.split(':');
+            if(parts.length === 3) {
+                 totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
+            }
+        }
+        
         const diff = Math.floor(totalSeconds - lastProcessedSecond);
 
         if (diff >= 5) { 
@@ -251,6 +252,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         } else {
             if (!err.message.includes('SIGKILL') && !err.message.includes('write after end')) {
                 console.error(`[FFmpeg Error Stream ${streamId}] ${err.message}`);
+                if(stderr) console.error(stderr);
             }
         }
         cleanupStream(streamId);
