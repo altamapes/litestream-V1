@@ -50,17 +50,16 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
       } else {
+        // IMPORTANT: -loop 1 for image provides infinite video stream
         command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 25', '-re']); 
       }
 
       // Input 1: Audio Stream
-      // FIX LOOP STOPPING: Use CONCAT method even for single file if LOOP is ON
       if (files.length === 1 && loop) {
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
           
           // Create a wrapper playlist for the single file
-          // "stream_loop" works perfectly on concat inputs, but sometimes fails on raw mp3 inputs
           const playlistContent = `file '${path.resolve(files[0]).replace(/'/g, "'\\''")}'`;
           fs.writeFileSync(currentPlaylistPath, playlistContent);
 
@@ -72,7 +71,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
                      '-re'              // Read at native speed
                  ]);
       } 
-      // Multi-file playlist logic (Manual Piping via Node Stream)
+      // Multi-file playlist logic
       else {
           const mixedStream = new PassThrough();
           activeInputStream = mixedStream;
@@ -107,7 +106,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']);
       }
 
-      // OUTPUT OPTIONS (Force High Bitrate CBR for YouTube)
+      // OUTPUT OPTIONS (Fixing Timestamp Reset Issue)
       command.outputOptions([
         '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
@@ -121,8 +120,16 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-nal-hrd cbr',     
         '-x264-params nal-hrd=cbr', 
         
-        '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
-        '-f flv', '-flvflags no_duration_filesize'
+        // AUDIO CONFIG - CRITICAL FIX
+        '-c:a aac', 
+        '-b:a 128k', 
+        '-ar 44100', 
+        // asetpts=N/SR/TB -> Fixes timestamp reset when looping.
+        // aresample=async=1 -> Prevents audio drift
+        '-af aresample=async=1000,asetpts=N/SR/TB',
+        
+        '-f flv', 
+        '-flvflags no_duration_filesize'
       ]);
 
     } 
@@ -168,7 +175,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-nal-hrd cbr',     
         '-max_muxing_queue_size 9999', 
         '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',            
-        '-af aresample=async=1', 
+        '-af aresample=async=1000,asetpts=N/SR/TB', // Added timestamp fix for video playlists too
         '-bsf:a aac_adtstoasc',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
@@ -178,6 +185,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream ${streamId} started`);
+        console.log(`[FFmpeg Cmd] ${commandLine}`); // Added logging for debug
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
