@@ -9,17 +9,29 @@ const ffmpeg = require('fluent-ffmpeg'); // ADDED
 const { getVideos, saveVideo, deleteVideo, toggleVideoLock, db } = require('./database');
 const { startStream, stopStream, isStreaming, getActiveStreams } = require('./streamEngine');
 
-// Helper: Reset harian jika tanggal berubah
+// Helper: Reset harian jika tanggal berubah, KECUALI paket tipe 'total'
 const syncUserUsage = (userId) => {
     return new Promise((resolve) => {
         const today = new Date().toISOString().split('T')[0];
-        db.get("SELECT last_usage_reset, usage_seconds FROM users WHERE id = ?", [userId], (err, row) => {
-            if (row && row.last_usage_reset !== today) {
-                db.run("UPDATE users SET usage_seconds = 0, last_usage_reset = ? WHERE id = ?", [today, userId], () => {
-                    resolve(0);
-                });
+        // Join with plans to get limit_type
+        db.get(`SELECT u.last_usage_reset, u.usage_seconds, p.limit_type 
+                FROM users u 
+                LEFT JOIN plans p ON u.plan_id = p.id 
+                WHERE u.id = ?`, [userId], (err, row) => {
+            
+            if (row) {
+                // Logic: Reset hanya jika hari berubah DAN limit_type adalah 'daily'
+                // Jika limit_type = 'total', jangan pernah reset usage_seconds
+                if (row.limit_type === 'daily' && row.last_usage_reset !== today) {
+                    db.run("UPDATE users SET usage_seconds = 0, last_usage_reset = ? WHERE id = ?", [today, userId], () => {
+                        resolve(0);
+                    });
+                } else {
+                    // Jika total, atau hari belum berubah, kembalikan usage saat ini
+                    resolve(row.usage_seconds);
+                }
             } else {
-                resolve(row ? row.usage_seconds : 0);
+                resolve(0);
             }
         });
     });
@@ -182,13 +194,16 @@ router.post('/playlist/start', async (req, res) => {
   const activeStreams = getActiveStreams(userId);
 
   db.get(`
-    SELECT p.allowed_types, p.daily_limit_hours, p.max_active_streams
+    SELECT p.allowed_types, p.daily_limit_hours, p.max_active_streams, p.limit_type
     FROM users u JOIN plans p ON u.plan_id = p.id 
     WHERE u.id = ?`, [userId], (err, plan) => {
     
     // Cek Batasan Waktu
     if (currentUsage >= plan.daily_limit_hours * 3600) {
-        return res.status(403).json({ error: `Batas waktu harian (${plan.daily_limit_hours} jam) sudah habis.` });
+        const errorMsg = plan.limit_type === 'total' 
+            ? `Kuota Trial ${plan.daily_limit_hours} Jam telah habis. Silakan upgrade paket.`
+            : `Batas harian (${plan.daily_limit_hours} jam) sudah habis.`;
+        return res.status(403).json({ error: errorMsg });
     }
 
     // Cek Limit Max Active Streams

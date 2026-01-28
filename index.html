@@ -702,6 +702,12 @@
             const plans = await res.json();
             document.getElementById('pricing-grid').innerHTML = plans.map(p => {
                 const isPopular = p.id === 2; // Starter Stream
+                // Handle text display for TOTAL limit type vs DAILY
+                const isTotal = p.limit_type === 'total';
+                const limitText = isTotal 
+                    ? `Total ${p.daily_limit_hours} Hours (One-Time)` 
+                    : `${p.daily_limit_hours} Hours/Day`;
+                
                 return `
                 <div class="bg-[#11151d] border ${isPopular ? 'border-slate-600' : 'border-slate-800'} rounded-2xl p-6 flex flex-col relative group hover:border-slate-600 transition-colors">
                     <h4 class="text-sm font-bold text-white mb-1">${p.name}</h4>
@@ -709,7 +715,7 @@
                     
                     <ul class="text-[11px] text-slate-400 space-y-3 flex-1 mb-8">
                         <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> ${p.max_storage_mb}MB Storage</li>
-                        <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> ${p.daily_limit_hours} Hours/Day</li>
+                        <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> ${limitText}</li>
                         <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> Max ${p.max_active_streams || 1} Active Stream</li>
                         <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> Supports ${p.allowed_types.split(',').join(' & ')}</li>
                     </ul>
