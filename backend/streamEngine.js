@@ -36,7 +36,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let hasStarted = false;
 
     // =========================================================
-    // 1. AUDIO MODE (MP3) - JANGAN DIUBAH (WORKING PERFECTLY)
+    // 1. AUDIO MODE (MP3) - TIDAK DIUBAH (WORKING PERFECTLY)
     // =========================================================
     if (isAllAudio) {
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
@@ -104,17 +104,18 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     // =========================================================
     else {
       
-      // -- SKENARIO A: Single File Loop (Paling Sering Digunakan) --
+      // -- SKENARIO A: Single File Loop (Solusi Paling Stabil untuk MP4 Loop) --
       // Kita gunakan teknik "Movie Source Filter".
       // Ini membaca file sebagai generator tak terbatas, bukan sebagai file biasa.
       if (files.length === 1 && loop) {
           const videoPath = path.resolve(files[0]).replace(/\\/g, '/'); // Fix path windows/linux
           
-          // Input Dummy: FFmpeg butuh setidaknya 1 input fisik, kita kasih nullsrc (kosong)
-          // Input video sesungguhnya dimuat lewat filter di bawah.
+          // Input Dummy: FFmpeg butuh setidaknya 1 input fisik agar jalan realtime (-re)
+          // Kita gunakan nullsrc (layar hitam kosong) sebagai pemicu waktu.
+          // Video asli dimuat lewat filter, BUKAN lewat .input() biasa.
           command.input('anullsrc=channel_layout=stereo:sample_rate=44100')
                  .inputFormat('lavfi')
-                 .inputOptions(['-re']); // Read realtime dari dummy source
+                 .inputOptions(['-re']); 
 
           // COMPLEX FILTER MAGIC
           // movie=filename:loop=0 -> Baca file, loop tak terbatas (0)
