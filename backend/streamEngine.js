@@ -38,68 +38,84 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
     // --- AUDIO HANDLING ---
     if (isAllAudio) {
-      const mixedStream = new PassThrough();
-      activeInputStream = mixedStream;
-      let fileIndex = 0;
-
-      const playNextSong = () => {
-        if (!activeStreams.has(streamId) && hasStarted) return; // Stop if stream removed
-        
-        if (fileIndex >= files.length) {
-            if (loop) { fileIndex = 0; } 
-            else { mixedStream.end(); return; }
-        }
-
-        const currentFile = files[fileIndex];
-        const songStream = fs.createReadStream(currentFile);
-        
-        songStream.pipe(mixedStream, { end: false });
-
-        songStream.on('end', () => {
-           fileIndex++;
-           playNextSong();
-        });
-        
-        songStream.on('error', (err) => {
-           console.error(`Error reading file ${currentFile}:`, err);
-           fileIndex++;
-           playNextSong();
-        });
-      };
-
-      playNextSong();
-
+      
       // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
+      // Added 'noise' filter to prevent bitrate drop on static images
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-        'noise=alls=1:allf=t+u', // Micro-noise to prevent bitrate drop
+        'noise=alls=1:allf=t+u', // Micro-noise to make encoder work harder
         'format=yuv420p'
       ].join(',');
 
-      // Input 1: Image/Color
+      // Input 1: Image/Color (Background)
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
       } else {
-        command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 1', '-re']); 
+        // -loop 1 ensures the image repeats infinitely for the video track
+        command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 25', '-re']); 
       }
 
       // Input 2: Audio Stream
-      command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']); 
+      // FIX LOOPING ISSUE: If single file + loop, use native ffmpeg loop (-stream_loop -1)
+      if (files.length === 1 && loop) {
+          command.input(files[0]).inputOptions(['-stream_loop -1', '-re']);
+      } 
+      // Multi-file playlist logic (Manual Piping)
+      else {
+          const mixedStream = new PassThrough();
+          activeInputStream = mixedStream;
+          let fileIndex = 0;
 
+          const playNextSong = () => {
+            if (!activeStreams.has(streamId) && hasStarted) return; 
+            
+            if (fileIndex >= files.length) {
+                if (loop) { fileIndex = 0; } 
+                else { mixedStream.end(); return; }
+            }
+
+            const currentFile = files[fileIndex];
+            const songStream = fs.createReadStream(currentFile);
+            
+            songStream.pipe(mixedStream, { end: false });
+
+            songStream.on('end', () => {
+               fileIndex++;
+               playNextSong();
+            });
+            
+            songStream.on('error', (err) => {
+               console.error(`Error reading file ${currentFile}:`, err);
+               fileIndex++;
+               playNextSong();
+            });
+          };
+
+          playNextSong();
+          command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']);
+      }
+
+      // OUTPUT OPTIONS FOR AUDIO MODE
       command.outputOptions([
         '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
-        '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', // 25 FPS Standard
-        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', 
-        '-bufsize 5000k', // Relaxed buffer for audio mode too
-        '-nal-hrd cbr', 
+        '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', 
+        
+        // FIX BITRATE WARNING: Force Constant Bitrate (CBR) with padding
+        '-b:v 3000k',       // Target 3000kbps (Higher than YouTube's 2500k req)
+        '-minrate 3000k',   // Force minimum
+        '-maxrate 3000k',   // Force maximum
+        '-bufsize 6000k',   // 2x Buffer
+        '-nal-hrd cbr',     // Enforce strict CBR (Fills with dummy data if image is static)
+        '-x264-params nal-hrd=cbr', // Double ensure for x264
+        
         '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
     } 
-    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY) ---
+    // --- VIDEO HANDLING ---
     else {
       // Standardize Video Filter: Scale to 720p, Pad to 16:9
       const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
@@ -130,7 +146,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       }
       
       // UNIVERSAL OUTPUT OPTIONS (Transcoding)
-      // FIX: Relaxed buffers and added queue size to prevent MP4 crashes
       command.outputOptions([
         '-c:v libx264',
         '-preset ultrafast', 
@@ -138,18 +153,18 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         `-vf ${videoFilter}`,
         '-pix_fmt yuv420p',
         '-r 30',
-        '-g 60',            // Keyframe every 2 seconds (30fps * 2)
-        '-b:v 2500k',       // Target Bitrate
-        '-minrate 2500k',   // FORCE Minimum Bitrate
-        '-maxrate 2500k',   // FORCE Maximum Bitrate
-        '-bufsize 5000k',   // BUFFER INCREASED: Prevent underflow/overflow on complex scenes
-        '-nal-hrd cbr',     // Enforce CBR compliance
-        '-max_muxing_queue_size 9999', // FIX: Prevent "Too many packets buffered" error
+        '-g 60',            
+        '-b:v 3000k',       // Bumped to 3000k
+        '-minrate 3000k',   
+        '-maxrate 3000k',   
+        '-bufsize 6000k',   
+        '-nal-hrd cbr',     
+        '-max_muxing_queue_size 9999', 
         '-c:a aac',
         '-ar 44100',
         '-b:a 128k',
         '-ac 2',            
-        '-af aresample=async=1', // FIX: Ensure audio sync even if sample rate differs
+        '-af aresample=async=1', 
         '-bsf:a aac_adtstoasc',
         '-f flv',
         '-flvflags no_duration_filesize'
