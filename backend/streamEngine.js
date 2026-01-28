@@ -9,7 +9,7 @@ const { db } = require('./database');
 // Store active streams: key = streamId, value = { command, userId, playlistPath, activeInputStream, loop: boolean }
 const activeStreams = new Map();
 
-// Fungsi ini dibutuhkan oleh server.js untuk membersihkan proses saat restart
+// RESTORED: Fungsi ini WAJIB ada agar server.js tidak crash
 const killZombieProcesses = () => {
     return new Promise((resolve) => {
          console.log('[System] Cleaning up zombie FFmpeg processes...');
@@ -33,93 +33,97 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let command = ffmpeg();
     let lastProcessedSecond = 0;
     let currentPlaylistPath = null;
-    let activeInputStream = null;
+    let activeInputStream = null; 
     let hasStarted = false;
 
     // --- AUDIO HANDLING ---
     if (isAllAudio) {
-      const mixedStream = new PassThrough();
-      activeInputStream = mixedStream;
-      let fileIndex = 0;
-
-      const playNextSong = () => {
-        if (!activeStreams.has(streamId) && hasStarted) return; // Stop if stream removed
-        
-        if (fileIndex >= files.length) {
-            if (loop) { fileIndex = 0; } 
-            else { mixedStream.end(); return; }
-        }
-
-        const currentFile = files[fileIndex];
-        const songStream = fs.createReadStream(currentFile);
-        
-        songStream.pipe(mixedStream, { end: false });
-
-        songStream.on('end', () => {
-           fileIndex++;
-           playNextSong();
-        });
-        
-        songStream.on('error', (err) => {
-           console.error(`Error reading file ${currentFile}:`, err);
-           fileIndex++;
-           playNextSong();
-        });
-      };
-
-      playNextSong();
-
-      // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
-      const videoFilter = [
-        'scale=1280:720:force_original_aspect_ratio=decrease',
-        'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-        'noise=alls=1:allf=t+u', // Micro-noise to prevent bitrate drop
-        'format=yuv420p'
-      ].join(',');
-
-      // Input 1: Image/Color
+      // Input 1: Image/Color (Background)
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
       } else {
+        // Gambar statis
         command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 1', '-re']); 
       }
 
-      // Input 2: Audio Stream
-      command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']); 
+      // Input 2: Audio (Native FFmpeg Concat Playlist)
+      if (files.length === 1) {
+          command.input(files[0]);
+          const audioOpts = ['-re'];
+          if (loop) audioOpts.unshift('-stream_loop', '-1');
+          command.inputOptions(audioOpts);
+      } else {
+          const uniqueId = streamId;
+          currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
+          
+          const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
+          fs.writeFileSync(currentPlaylistPath, playlistContent);
+
+          const audioInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
+          if (loop) audioInputOpts.unshift('-stream_loop', '-1');
+
+          command.input(currentPlaylistPath).inputOptions(audioInputOpts);
+      }
+
+      // OPTIMIZED FILTERS & OUTPUT
+      // noise=alls=1 mencegah bitrate drop ke 0 saat gambar diam
+      const videoFilter = [
+        'scale=1280:720:force_original_aspect_ratio=decrease',
+        'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
+        'noise=alls=1:allf=t+u', 
+        'format=yuv420p'
+      ].join(',');
 
       command.outputOptions([
-        '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
-        '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
-        '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', // 25 FPS Standard
-        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', 
-        '-bufsize 5000k', // Relaxed buffer for audio mode too
-        '-nal-hrd cbr', 
-        '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
-        '-f flv', '-flvflags no_duration_filesize'
+        '-map 0:v', '-map 1:a', 
+        `-vf ${videoFilter}`,
+        
+        '-c:v libx264', 
+        '-preset ultrafast', 
+        '-tune zerolatency', 
+        '-r 25',              
+        '-g 50',              
+        '-keyint_min 50', 
+        '-sc_threshold 0', 
+        
+        '-b:v 2500k',         
+        '-minrate 2500k', 
+        '-maxrate 2500k', 
+        '-bufsize 5000k',     
+        
+        '-nal-hrd', 'cbr',    
+        
+        '-c:a aac', 
+        '-b:a 128k', 
+        '-ar 44100', 
+        
+        // --- FIX UTAMA: TIMESTAMP CORRECTION ---
+        // aresample=async=1000: Menangani drift sinkronisasi kasar
+        // asetpts=N/SR/TB: Memaksa timestamp dibuat baru berdasarkan jumlah sampel (monotonic increasing)
+        // Ini mencegah error "non-monotonous DTS" di YouTube saat loop
+        '-af', 'aresample=async=1000,asetpts=N/SR/TB', 
+        
+        '-f flv', 
+        '-flvflags no_duration_filesize'
       ]);
 
     } 
-    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY) ---
+    // --- VIDEO HANDLING ---
     else {
-      // Standardize Video Filter: Scale to 720p, Pad to 16:9
       const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
       
-      // LOGIC BRANCH: Single File vs Playlist
       if (files.length === 1) {
-          // --- SINGLE FILE MODE (More Stable) ---
           const singleFile = files[0];
           command.input(singleFile);
           
-          const inputOpts = ['-re']; // Read at native frame rate
+          const inputOpts = ['-re']; 
           if (loop) inputOpts.unshift('-stream_loop', '-1');
           command.inputOptions(inputOpts);
 
       } else {
-          // --- PLAYLIST MODE (Using Concat Demuxer) ---
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           
-          // Escape single quotes for ffmpeg concat file
           const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
           fs.writeFileSync(currentPlaylistPath, playlistContent);
 
@@ -129,28 +133,33 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           command.input(currentPlaylistPath).inputOptions(videoInputOpts);
       }
       
-      // UNIVERSAL OUTPUT OPTIONS (Transcoding)
-      // FIX: Relaxed buffers and added queue size to prevent MP4 crashes
       command.outputOptions([
         '-c:v libx264',
         '-preset ultrafast', 
         '-tune zerolatency',
         `-vf ${videoFilter}`,
         '-pix_fmt yuv420p',
-        '-r 30',
-        '-g 60',            // Keyframe every 2 seconds (30fps * 2)
-        '-b:v 2500k',       // Target Bitrate
-        '-minrate 2500k',   // FORCE Minimum Bitrate
-        '-maxrate 2500k',   // FORCE Maximum Bitrate
-        '-bufsize 5000k',   // BUFFER INCREASED: Prevent underflow/overflow on complex scenes
-        '-nal-hrd cbr',     // Enforce CBR compliance
-        '-max_muxing_queue_size 9999', // FIX: Prevent "Too many packets buffered" error
+        
+        '-r 30',            
+        '-g 60',            
+        
+        '-b:v 2500k',       
+        '-minrate 2500k',   
+        '-maxrate 2500k',   
+        '-bufsize 5000k',   
+        
+        '-nal-hrd', 'cbr',     
+        '-max_muxing_queue_size 9999', 
+        
         '-c:a aac',
         '-ar 44100',
         '-b:a 128k',
-        '-ac 2',            
-        '-af aresample=async=1', // FIX: Ensure audio sync even if sample rate differs
+        '-ac 2',
+        
+        // Terapkan fix serupa untuk video mode (just in case)
+        '-af', 'aresample=async=1000,asetpts=N/SR/TB',
         '-bsf:a aac_adtstoasc',
+        
         '-f flv',
         '-flvflags no_duration_filesize'
       ]);
@@ -177,6 +186,8 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       })
       .on('progress', (progress) => {
         const currentTimemark = progress.timemark; 
+        if (!currentTimemark) return;
+
         const parts = currentTimemark.split(':');
         const totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
         const diff = Math.floor(totalSeconds - lastProcessedSecond);
