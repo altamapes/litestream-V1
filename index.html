@@ -12,9 +12,9 @@
     <script src="/socket.io/socket.io.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap');
         
-        :root { --accent: #6366f1; --bg: #0f172a; }
+        :root { --accent: #6366f1; --bg: #0B0E14; }
         body { 
             font-family: 'Plus Jakarta Sans', sans-serif; 
             background-color: var(--bg); 
@@ -42,7 +42,7 @@
         }
 
         .glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
-        .hero-bg { background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 50%); }
+        .hero-bg { background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 40%); }
         
         .view-section { display: none !important; }
         .view-section.active-view { display: block !important; }
@@ -51,74 +51,126 @@
         .pulse-live { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        /* Admin Panel specific styles removed in favor of shared styles */
-
-        .badge-small {
-            @apply text-[9px] font-bold text-slate-500 uppercase tracking-tighter font-mono;
+        /* Custom Gradients for Landing */
+        .text-gradient {
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .btn-gradient {
+            background: linear-gradient(to right, #4f46e5, #9333ea);
         }
 
-        .btn-modern-primary {
-            @apply bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all active:scale-95 shadow-lg shadow-indigo-600/20;
-        }
-        
-        .btn-modern-danger {
-            @apply w-10 h-10 rounded-xl bg-slate-800/80 hover:bg-rose-600/90 text-slate-400 hover:text-white flex items-center justify-center transition-all border border-slate-700/50 hover:border-rose-500/50;
-        }
-
-        .text-neon-emerald {
-            color: #10b981;
-            text-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+        .feature-card {
+            background-color: #11151d;
+            border: 1px solid #1e293b;
         }
     </style>
 </head>
 <body class="min-h-screen">
 
     <!-- Landing View -->
-    <div id="landing-view" class="view-section active-view relative overflow-hidden min-h-screen">
+    <div id="landing-view" class="view-section active-view relative overflow-hidden min-h-screen flex flex-col">
         <div class="absolute inset-0 hero-bg -z-10"></div>
-        <nav class="fixed top-0 left-0 right-0 z-50 px-6 py-6 lg:px-20 flex justify-between items-center glass border-b border-slate-800">
+        
+        <!-- Navbar -->
+        <nav class="w-full px-6 py-6 lg:px-20 flex justify-between items-center z-50">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg"><i class="fas fa-bolt text-white"></i></div>
-                <span class="text-xl font-bold tracking-tight">LiteStream</span>
+                <div class="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg transform rotate-3">
+                    <i class="fas fa-bolt text-white text-sm"></i>
+                </div>
+                <span class="text-xl font-bold tracking-tight text-white">LiteStream</span>
             </div>
-            <div class="hidden md:flex gap-8 text-sm font-semibold text-slate-400">
-                <a href="#features" class="hover:text-white transition-colors">Features</a>
-                <a href="#pricing" class="hover:text-white transition-colors">Pricing</a>
+            <div class="flex items-center gap-6">
+                <button onclick="showAuth('login')" class="text-sm font-bold text-slate-300 hover:text-white transition-colors">Login Member</button>
+                <button onclick="showAuth('register')" class="bg-white hover:bg-slate-200 text-slate-900 px-6 py-2.5 rounded-full font-bold text-sm shadow-xl transition-all">Daftar Sekarang</button>
             </div>
-            <button onclick="showAuth()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-full font-bold text-sm shadow-xl transition-all">Dashboard</button>
         </nav>
 
-        <section class="pt-40 pb-16 px-6 lg:px-20 text-center max-w-5xl mx-auto">
-            <h1 id="landing-title-display" class="text-5xl lg:text-7xl font-extrabold leading-tight mb-8">Broadcast Anywhere <br> from <span class="text-indigo-400">Any VPS.</span></h1>
-            <p id="landing-desc-display" class="text-lg text-slate-400 mb-12">Server streaming paling ringan di dunia. Dirancang khusus untuk VPS 1GB RAM.</p>
-            <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                <button id="landing-btn-reg-display" onclick="showAuth('register')" class="bg-indigo-600 hover:bg-indigo-500 text-white px-10 py-5 rounded-3xl font-bold shadow-2xl transition-all">Daftar Sekarang</button>
-                <button id="landing-btn-login-display" onclick="showAuth('login')" class="bg-slate-800 hover:bg-slate-700 text-white px-10 py-5 rounded-3xl font-bold border border-slate-700">Login Member</button>
+        <!-- Hero Section -->
+        <section class="flex-1 flex flex-col items-center justify-center text-center px-6 lg:px-4 pb-20 pt-16">
+            <!-- Badge -->
+            <div class="mb-8 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#151921] border border-slate-800 shadow-xl">
+                <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                <span class="text-[10px] font-bold text-slate-400 tracking-wide uppercase">v1.0 Now Available for Low-End VPS</span>
+            </div>
+
+            <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 leading-tight text-white">
+                Broadcast Anywhere <br> from <span class="text-indigo-400">Any VPS.</span>
+            </h1>
+            
+            <p class="text-lg text-slate-400 mb-10 max-w-2xl font-medium leading-relaxed">
+                Server streaming paling ringan di dunia. Dirancang khusus untuk VPS 1GB RAM.
+            </p>
+
+            <div class="flex flex-col sm:flex-row gap-4 justify-center w-full max-w-md sm:max-w-none">
+                <button onclick="showAuth('register')" class="btn-gradient hover:opacity-90 text-white px-8 py-4 rounded-xl font-bold text-sm shadow-2xl shadow-indigo-500/20 transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-rocket"></i> Start Streaming Now
+                </button>
+                <a href="#pricing" class="bg-[#151921] border border-slate-700 hover:border-slate-500 text-white px-8 py-4 rounded-xl font-bold text-sm transition-all">
+                    View Pricing
+                </a>
+            </div>
+
+            <!-- Features Grid -->
+            <div id="features" class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-24 max-w-6xl w-full text-left">
+                <!-- Card 1 -->
+                <div class="feature-card p-8 rounded-2xl group hover:border-indigo-500/30 transition-colors">
+                    <div class="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center mb-6 group-hover:bg-blue-500/20 transition-colors">
+                        <i class="fas fa-microchip text-blue-400 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white mb-2">Ultra Lightweight</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">Optimized for 1GB RAM VPS. Uses minimal CPU resources for 24/7 looping.</p>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="feature-card p-8 rounded-2xl group hover:border-purple-500/30 transition-colors">
+                    <div class="w-12 h-12 bg-purple-500/10 rounded-xl flex items-center justify-center mb-6 group-hover:bg-purple-500/20 transition-colors">
+                        <i class="fas fa-share-alt text-purple-400 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white mb-2">Multi-Platform</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">Stream to YouTube, Facebook, and Twitch simultaneously with ease.</p>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="feature-card p-8 rounded-2xl group hover:border-emerald-500/30 transition-colors">
+                    <div class="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center mb-6 group-hover:bg-emerald-500/20 transition-colors">
+                        <i class="fas fa-infinity text-emerald-400 text-xl"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white mb-2">24/7 Loop</h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">Set your playlist, enable loop, and your stream stays online forever.</p>
+                </div>
             </div>
         </section>
 
-        <section id="pricing" class="py-24 px-6 lg:px-20 bg-slate-950/50">
-            <div class="text-center mb-16"><h2 class="text-4xl font-bold mb-4">Pilih Paket Streaming</h2></div>
-            <div id="pricing-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto"></div>
+        <!-- Pricing Section -->
+        <section id="pricing" class="py-24 px-6 lg:px-20 bg-[#0B0E14] border-t border-slate-900">
+            <div class="text-center mb-16 max-w-3xl mx-auto">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4 text-white">Simple, Transparent Pricing</h2>
+                <p class="text-slate-400">Choose the plan that fits your streaming needs.</p>
+            </div>
+            <div id="pricing-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
+                <!-- Pricing Cards will be injected here via JS -->
+            </div>
         </section>
         
-        <footer class="py-10 text-center border-t border-slate-800 text-slate-600 text-[10px] uppercase font-bold tracking-widest">
+        <footer class="py-10 text-center border-t border-slate-900 bg-[#0B0E14] text-slate-600 text-[10px] uppercase font-bold tracking-widest">
             &copy; 2024 LiteStream Engine. Crafted for Low-Specs.
         </footer>
     </div>
 
     <!-- Auth Modal -->
-    <div id="login-view" class="hidden fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-xl flex items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-[2.5rem] p-8 space-y-8 shadow-2xl relative">
+    <div id="login-view" class="hidden fixed inset-0 z-[100] bg-[#000000]/90 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-[#11151d] border border-slate-800 w-full max-w-sm rounded-[2rem] p-8 space-y-8 shadow-2xl relative">
             <button onclick="hideAuth()" class="absolute top-6 right-6 text-slate-500 hover:text-white"><i class="fas fa-times"></i></button>
             <div class="text-center">
-                <div class="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4"><i class="fas fa-bolt text-2xl text-white"></i></div>
-                <h2 class="text-2xl font-bold" id="auth-title">LiteStream</h2>
+                <div class="w-16 h-16 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><i class="fas fa-bolt text-2xl text-white"></i></div>
+                <h2 class="text-2xl font-bold text-white" id="auth-title">LiteStream</h2>
             </div>
             <form onsubmit="handleAuth(event)" class="space-y-4">
-                <input type="text" id="login-user" required class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 ring-indigo-500/50" placeholder="Username">
-                <input type="password" id="login-pass" required class="w-full bg-slate-800 border border-slate-700 rounded-2xl px-5 py-4 text-white outline-none focus:ring-2 ring-indigo-500/50" placeholder="Password">
-                <button type="submit" id="auth-btn" class="w-full py-4 bg-indigo-600 rounded-2xl font-bold text-white shadow-xl hover:bg-indigo-500 uppercase">Masuk Dashboard</button>
+                <input type="text" id="login-user" required class="w-full bg-[#0B0E14] border border-slate-700 rounded-xl px-5 py-4 text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Username">
+                <input type="password" id="login-pass" required class="w-full bg-[#0B0E14] border border-slate-700 rounded-xl px-5 py-4 text-white outline-none focus:border-indigo-500 transition-colors" placeholder="Password">
+                <button type="submit" id="auth-btn" class="w-full py-4 btn-gradient rounded-xl font-bold text-white shadow-lg hover:opacity-90 uppercase tracking-wide">Masuk Dashboard</button>
             </form>
         </div>
     </div>
@@ -648,16 +700,23 @@
         async function fetchPublicPlans() {
             const res = await fetch('/api/plans-public');
             const plans = await res.json();
-            document.getElementById('pricing-grid').innerHTML = plans.map(p => `
-                <div class="glass p-8 rounded-[3rem] border border-slate-800 flex flex-col ${p.id === 4 ? 'ring-2 ring-indigo-500' : ''} relative overflow-hidden group hover:border-indigo-500/30 transition-all">
-                    <h4 class="text-lg font-bold">${p.name}</h4>
-                    <div id="price-display-${p.id}" class="text-2xl font-black text-indigo-400 my-4">${p.price_text}</div>
-                    <ul class="text-xs text-slate-400 space-y-2 flex-1 mb-6">
-                        <li><i class="fas fa-check text-indigo-400 mr-2"></i> ${p.daily_limit_hours} Jam/hari</li>
-                        <li><i class="fas fa-check text-indigo-400 mr-2"></i> ${p.max_storage_mb}MB Storage</li>
+            document.getElementById('pricing-grid').innerHTML = plans.map(p => {
+                const isPopular = p.id === 2; // Starter Stream
+                return `
+                <div class="bg-[#11151d] border ${isPopular ? 'border-slate-600' : 'border-slate-800'} rounded-2xl p-6 flex flex-col relative group hover:border-slate-600 transition-colors">
+                    <h4 class="text-sm font-bold text-white mb-1">${p.name}</h4>
+                    <div class="text-2xl font-bold text-blue-400 mb-6">${p.price_text}</div>
+                    
+                    <ul class="text-[11px] text-slate-400 space-y-3 flex-1 mb-8">
+                        <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> ${p.max_storage_mb}MB Storage</li>
+                        <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> ${p.daily_limit_hours} Hours/Day</li>
+                        <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> Max ${p.max_active_streams || 1} Active Stream</li>
+                        <li class="flex items-center gap-2"><i class="fas fa-check-circle text-blue-500"></i> Supports ${p.allowed_types.split(',').join(' & ')}</li>
                     </ul>
-                    <button onclick="showAuth('register')" class="w-full py-3 bg-indigo-600 rounded-xl font-bold hover:bg-indigo-500 transition-all">Pilih Paket</button>
-                </div>`).join('');
+                    
+                    <button onclick="showAuth('register')" class="w-full py-3 bg-[#1a202c] hover:bg-[#2d3748] text-white rounded-lg font-bold text-xs transition-colors border border-slate-700">Choose Plan</button>
+                </div>
+            `}).join('');
         }
 
         function switchTab(tab) {
