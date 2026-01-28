@@ -2,7 +2,6 @@
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
-const { PassThrough } = require('stream');
 const { exec } = require('child_process');
 const { db } = require('./database');
 
@@ -20,68 +19,12 @@ const killZombieProcesses = () => {
     });
 }
 
-// ============================================================================
-// THE MAGIC SAUCE: NODE.JS INFINITE AUDIO PIPE
-// Mengalirkan data MP3 secara terus menerus ke FFmpeg tanpa henti.
-// Bagi FFmpeg, ini adalah satu file audio yang sangat panjang (infinite).
-// Timestamp tidak akan pernah reset.
-// ============================================================================
-const createInfiniteAudioStream = (files, loop) => {
-    const outStream = new PassThrough();
-    let currentIdx = 0;
-    let streamActive = true;
-    let currentReadStream = null;
-
-    const playNext = () => {
-        if (!streamActive) return;
-
-        if (currentIdx >= files.length) {
-            if (!loop) {
-                outStream.end(); 
-                return;
-            }
-            currentIdx = 0; // Loop kembali ke file pertama
-        }
-
-        const filePath = files[currentIdx];
-        
-        if (!fs.existsSync(filePath)) {
-            console.error(`File missing: ${filePath}, skipping...`);
-            currentIdx++;
-            playNext();
-            return;
-        }
-
-        // Baca file MP3 dan kirim ke Pipe utama
-        currentReadStream = fs.createReadStream(filePath);
-        
-        // { end: false } PENTING: Jangan tutup pipa output saat lagu ini habis
-        currentReadStream.pipe(outStream, { end: false });
-
-        currentReadStream.on('end', () => {
-            currentIdx++;
-            playNext(); // Sambung lagu berikutnya secara instan
-        });
-
-        currentReadStream.on('error', (err) => {
-            console.error(`Error reading ${filePath}:`, err);
-            currentIdx++;
-            playNext();
-        });
-    };
-
-    // Mulai pemutaran
-    playNext();
-
-    // Fungsi untuk mematikan loop dari luar
-    outStream.kill = () => {
-        streamActive = false;
-        if (currentReadStream) currentReadStream.destroy();
-        outStream.end();
-        outStream.destroy();
-    };
-
-    return outStream;
+// Helper: Create Playlist File for Concat Demuxer
+const createPlaylistFile = (files, outputPath) => {
+    // Format Concat: file '/path/to/file.mp3'
+    const content = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+    fs.writeFileSync(outputPath, content);
+    return outputPath;
 };
 
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
@@ -96,85 +39,98 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
   return new Promise(async (resolve, reject) => {
     let command = ffmpeg();
     let lastProcessedSecond = 0;
-    let audioStreamNode = null;
+    let playlistPath = null;
     let hasStarted = false;
 
-    console.log(`[Stream ${streamId}] Starting Mode: INFINITE RADIO (MP3 + Image)`);
+    console.log(`[Stream ${streamId}] Starting Mode: STABLE RADIO (Native Loop + Timestamp Fix)`);
 
     // ---------------------------------------------------------
-    // INPUT 0: VISUAL (GAMBAR/VIDEO LOOP) - MASTER CLOCK (-re)
+    // INPUT 0: VISUAL (GAMBAR) - MASTER CLOCK
     // ---------------------------------------------------------
-    // Kita gunakan gambar sebagai "jangkar" waktu.
-    // '-re' dipasang di sini agar FFmpeg berjalan real-time (1x speed).
+    // Kita gunakan gambar sebagai penentu kecepatan stream (-re).
+    // Framerate 15fps cukup untuk gambar diam (sangat ringan).
     
     if (coverImagePath && fs.existsSync(coverImagePath)) {
-        // Jika file adalah Video (MP4), jadikan visual loop
         if (coverImagePath.endsWith('.mp4')) {
+             // Jika Video
              command.input(coverImagePath).inputOptions(['-stream_loop', '-1', '-re']);
         } else {
-             // Jika Gambar (JPG/PNG), loop sebagai video stream
+             // Jika Gambar (JPG/PNG)
              command.input(coverImagePath).inputOptions([
-                 '-loop', '1',       // Loop gambar selamanya
-                 '-re',              // Realtime reading (PENTING)
-                 '-framerate', '20'  // Hemat CPU, 20fps cukup untuk gambar diam
+                 '-loop', '1',       // Loop gambar
+                 '-re',              // Realtime Reading (PENTING AGAR TIDAK BUFFERING)
+                 '-framerate', '15'  // 15 FPS cukup untuk radio, hemat bandwidth & CPU
              ]);
         }
     } else {
-        // Fallback jika tidak ada gambar: Layar Hitam
-        command.input('color=c=black:s=1280x720:r=20').inputFormat('lavfi').inputOptions(['-re']);
+        // Fallback Layar Hitam
+        command.input('color=c=black:s=1280x720:r=15').inputFormat('lavfi').inputOptions(['-re']);
     }
 
     // ---------------------------------------------------------
-    // INPUT 1: AUDIO (NODE JS PIPE) - SLAVE
+    // INPUT 1: AUDIO (PLAYLIST)
     // ---------------------------------------------------------
-    // Di sini kita masukkan pipa "tak terbatas" kita.
-    // JANGAN pakai -re di sini, biarkan FFmpeg menarik audio sebutuhnya mengikuti video.
     
     if (mp3Files.length > 0) {
-        audioStreamNode = createInfiniteAudioStream(mp3Files, loop);
-        command.input(audioStreamNode).inputFormat('mp3');
+        // Buat file playlist.txt sementara
+        playlistPath = path.join(__dirname, 'uploads', `playlist_${streamId}.txt`);
+        createPlaylistFile(mp3Files, playlistPath);
+
+        command.input(playlistPath).inputOptions([
+            '-f', 'concat',      // Gunakan fitur concat demuxer
+            '-safe', '0',        // Izinkan path file bebas
+            ...(loop ? ['-stream_loop', '-1'] : []) // Loop di level input (sebelum dibaca)
+        ]);
     } else {
-        // Fallback Silence jika user lupa pilih MP3
         command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi');
     }
 
     // ---------------------------------------------------------
-    // COMPLEX FILTER
+    // COMPLEX FILTER (THE FIX)
     // ---------------------------------------------------------
-    command.complexFilter([
-        // 1. Proses Visual: Scale ke 720p, pastikan pixel format yuv420p (wajib untuk YouTube)
+    // 1. [0:v] Video di-scale dan setpts dibuat realtime.
+    // 2. [1:a] Audio di-resample DAN timestamp dibuat ulang (asetpts).
+    //    'asetpts=N/SR/TB' membuat timestamp monoton naik terus menerus 
+    //    berdasarkan jumlah sample, mengabaikan reset timestamp saat loop terjadi.
+    
+    const filters = [
+        // Video Logic
         { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
         { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
         { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
 
-        // 2. Proses Audio: Resample agar sample rate konsisten & generate timestamp (asetpts)
-        // aresample=async=1 membantu sinkronisasi jika ada sedikit jitter dari pipe
+        // Audio Logic (THE SECRET SAUCE)
+        // aresample=async=1: Sinkronisasi drift waktu
+        // asetpts=N/SR/TB: Generate timestamp baru yang linear (Anti-Putus)
         { filter: 'aresample', options: '44100:async=1', inputs: '1:a', outputs: 'resampled' },
         { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
-    ]);
+    ];
+
+    command.complexFilter(filters);
 
     // ---------------------------------------------------------
-    // OUTPUT OPTIONS (TUNED FOR STABILITY)
+    // OUTPUT OPTIONS
     // ---------------------------------------------------------
     command.outputOptions([
         '-map [v_out]', '-map [a_out]',
         
-        // Video Codec (H.264) - Sangat Cepat (ultrafast) untuk hemat CPU VPS
+        // Video Encoding (Sangat Ringan)
         '-c:v libx264', 
-        '-preset ultrafast', 
-        '-tune zerolatency',
-        '-g 40', // Keyframe interval (setiap 2 detik untuk 20fps)
-        '-b:v 1500k', // Bitrate visual (cukup untuk gambar diam)
-        '-maxrate 1500k', 
+        '-preset ultrafast', // Prioritas kecepatan CPU
+        '-tune zerolatency', // Mengurangi latency
+        '-r 15',             // Output 15 FPS (Sesuai input)
+        '-g 30',             // Keyframe tiap 2 detik (15*2) - Wajib untuk YouTube
+        '-b:v 1000k',        // Bitrate visual rendah (cukup untuk static image)
+        '-maxrate 1500k',
         '-bufsize 3000k',
 
-        // Audio Codec (AAC)
+        // Audio Encoding
         '-c:a aac', 
         '-b:a 128k', 
         '-ar 44100',
-        '-ac 2', // Stereo
+        '-ac 2',
 
-        // Format Output FLV (RTMP)
+        // Protocol RTMP/FLV
         '-f flv',
         '-flvflags no_duration_filesize'
     ]);
@@ -185,12 +141,13 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream Started: ${streamId}`);
+        // console.log(commandLine); // Debug command
         hasStarted = true;
         
         activeStreams.set(streamId, { 
             command, 
             userId, 
-            audioStreamNode, // Simpan referensi pipe untuk dimatikan nanti
+            playlistPath, // Simpan path untuk dihapus nanti
             startTime: Date.now(), 
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
             name: title || `Radio ${streamId.substr(0,4)}`
@@ -203,7 +160,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         resolve(streamId);
       })
       .on('progress', (progress) => {
-        // Hitung usage per 5 detik
+        // Logic Usage Database
         const currentTimemark = progress.timemark; 
         let totalSeconds = 0;
         if(currentTimemark) {
@@ -214,7 +171,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         const diff = Math.floor(totalSeconds - lastProcessedSecond);
         if (diff >= 5) { 
             lastProcessedSecond = totalSeconds;
-            // Update DB Usage
             db.get(`SELECT u.usage_seconds, p.daily_limit_hours FROM users u JOIN plans p ON u.plan_id = p.id WHERE u.id = ?`, [userId], (err, row) => {
                 if (row) {
                     const newUsage = row.usage_seconds + diff;
@@ -252,11 +208,9 @@ const cleanupStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (!stream) return;
   
-  // KILL THE NODE.JS AUDIO PIPE
-  // Ini wajib dilakukan agar loop pembacaan file berhenti
-  if (stream.audioStreamNode && typeof stream.audioStreamNode.kill === 'function') {
-      console.log(`[Stream ${streamId}] Stopping Audio Pipe Loop...`);
-      stream.audioStreamNode.kill();
+  // Hapus file playlist temp
+  if (stream.playlistPath && fs.existsSync(stream.playlistPath)) {
+      try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
   }
 
   activeStreams.delete(streamId);
