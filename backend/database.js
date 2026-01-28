@@ -58,7 +58,8 @@ const initDB = async () => {
             limit_type TEXT DEFAULT 'daily'
         )`);
 
-        // Migrasi Kolom Plans (Pastikan selesai sebelum seeding)
+        // Migrasi Kolom Plans
+        // Kita lakukan sequential await untuk menghindari lock
         await ensureColumn('plans', 'price_text', 'TEXT');
         await ensureColumn('plans', 'features_text', 'TEXT');
         await ensureColumn('plans', 'daily_limit_hours', 'INTEGER DEFAULT 24');
@@ -98,7 +99,7 @@ const initDB = async () => {
 
         await dbRun(`CREATE TABLE IF NOT EXISTS stream_settings (key TEXT PRIMARY KEY, value TEXT)`);
 
-        // 4. Seeding Data Plans (Aman karena kolom sudah pasti ada)
+        // 4. Seeding Data Plans
         const plans = [
             [1, 'Paket Free Trial', 2048, 'video,audio', 3, 'Gratis', 'Max 720p, Total 5 Jam (Trial Habis = Stop), Multi-Stream Ready', 5, 'total'],
             [2, 'Paket Pro (Creator)', 10240, 'video,audio', 5, 'Rp 100.000', 'Max 1080p, 24 Jam Non-stop, Multi-Target', 24, 'daily'],
@@ -107,11 +108,14 @@ const initDB = async () => {
         ];
         
         for (const p of plans) {
-            await dbRun(`INSERT OR IGNORE INTO plans (id, name, max_storage_mb, allowed_types, max_active_streams, price_text, features_text, daily_limit_hours, limit_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, p);
-            
-            // Force update untuk memastikan data lama terupdate dengan skema baru
-            await dbRun(`UPDATE plans SET max_active_streams = ?, daily_limit_hours = ?, limit_type = ?, features_text = ? WHERE id = ?`, 
+            // Cek dulu apakah plan sudah ada
+            const exist = await dbGet("SELECT id FROM plans WHERE id = ?", [p[0]]);
+            if (!exist) {
+                await dbRun(`INSERT INTO plans (id, name, max_storage_mb, allowed_types, max_active_streams, price_text, features_text, daily_limit_hours, limit_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, p);
+            } else {
+                await dbRun(`UPDATE plans SET max_active_streams = ?, daily_limit_hours = ?, limit_type = ?, features_text = ? WHERE id = ?`, 
                    [p[4], p[7], p[8], p[6], p[0]]);
+            }
         }
 
         // Seeding Settings
@@ -138,7 +142,6 @@ const initDB = async () => {
 
     } catch (err) {
         console.error("Database Initialization Error:", err);
-        // Jangan throw error agar server tidak crash total, tapi log errornya
     }
 };
 

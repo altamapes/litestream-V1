@@ -20,6 +20,21 @@ const killZombieProcesses = () => {
     });
 }
 
+// Helper to check for audio stream
+const checkFileHasAudio = (filePath) => {
+    return new Promise((resolve) => {
+        ffmpeg.ffprobe(filePath, (err, metadata) => {
+            if (err) {
+                console.error(`[FFprobe Error] ${filePath}:`, err);
+                resolve(false);
+            } else {
+                const hasAudio = metadata.streams.some(s => s.codec_type === 'audio');
+                resolve(hasAudio);
+            }
+        });
+    });
+};
+
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
   const { userId, loop = false, coverImagePath, title, description } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
@@ -28,7 +43,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
   // Generate Unique Stream ID
   const streamId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     let command = ffmpeg();
     let lastProcessedSecond = 0;
     let currentPlaylistPath = null;
@@ -36,7 +51,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let hasStarted = false;
 
     // =========================================================
-    // 1. AUDIO MODE (MP3) - TIDAK DIUBAH (WORKING PERFECTLY)
+    // 1. AUDIO MODE (MP3) - WORKING PERFECTLY
     // =========================================================
     if (isAllAudio) {
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
@@ -97,65 +112,70 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-c:a aac', '-b:a 128k', '-ar 44100',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
-
     } 
     // =========================================================
-    // 2. VIDEO MODE (MP4) - UPDATED TO "MOVIE FILTER" METHOD
+    // 2. VIDEO MODE (MP4) - UPDATED FOR SILENT VIDEO SUPPORT
     // =========================================================
     else {
       
-      // -- SKENARIO A: Single File Loop (Solusi Paling Stabil untuk MP4 Loop) --
-      // Kita gunakan teknik "Movie Source Filter".
-      // Ini membaca file sebagai generator tak terbatas, bukan sebagai file biasa.
+      // Deteksi apakah file pertama memiliki audio
+      // Jika tidak, kita harus menginject silence
+      let hasFileAudio = true;
+      try {
+          hasFileAudio = await checkFileHasAudio(files[0]);
+          console.log(`[Stream ${streamId}] Audio detected: ${hasFileAudio}`);
+      } catch(e) { console.error('Audio check failed', e); }
+
+      // -- SKENARIO A: Single File Loop (Movie Filter) --
       if (files.length === 1 && loop) {
-          const videoPath = path.resolve(files[0]).replace(/\\/g, '/'); // Fix path windows/linux
+          const videoPath = path.resolve(files[0]).replace(/\\/g, '/');
           
-          // Input Dummy: FFmpeg butuh setidaknya 1 input fisik agar jalan realtime (-re)
-          // Kita gunakan nullsrc (layar hitam kosong) sebagai pemicu waktu.
-          // Video asli dimuat lewat filter, BUKAN lewat .input() biasa.
           command.input('anullsrc=channel_layout=stereo:sample_rate=44100')
                  .inputFormat('lavfi')
                  .inputOptions(['-re']); 
 
-          // COMPLEX FILTER MAGIC
-          // movie=filename:loop=0 -> Baca file, loop tak terbatas (0)
-          // setpts=N/FRAME_RATE/TB -> Buat timestamp baru yang mulus (0, 1, 2, 3...)
-          command.complexFilter([
-              // 1. Video Source Generator
+          // Build filter graph
+          const filters = [
+              // 1. Video Source
               {
                   filter: 'movie',
                   options: { filename: videoPath, loop: 0 }, 
                   outputs: 'raw_v'
               },
-              // 2. Audio Source Generator
-              {
-                  filter: 'amovie',
-                  options: { filename: videoPath, loop: 0 },
-                  outputs: 'raw_a'
-              },
-              // 3. Video Processing (Scale & FPS)
+              // 2. Video Processing
               { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: 'raw_v', outputs: 'scaled' },
               { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
               { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
-              { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' },
-              
-              // 4. Audio Processing (Sync)
-              { filter: 'aresample', options: '44100:async=1', inputs: 'raw_a', outputs: 'resampled' },
-              { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
-          ], ['v_out', 'a_out']);
+              { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' }
+          ];
+
+          // 3. Audio Handling
+          if (hasFileAudio) {
+              // Jika ada audio, gunakan amovie
+              filters.push({
+                  filter: 'amovie',
+                  options: { filename: videoPath, loop: 0 },
+                  outputs: 'raw_a'
+              });
+              filters.push({ filter: 'aresample', options: '44100:async=1', inputs: 'raw_a', outputs: 'resampled' });
+              filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
+          } else {
+              // Jika TIDAK ada audio, gunakan input #0 (anullsrc) sebagai audio
+              filters.push({ filter: 'aresample', options: '44100', inputs: '0:a', outputs: 'resampled' });
+              filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
+          }
+
+          command.complexFilter(filters, ['v_out', 'a_out']);
 
       } 
-      // -- SKENARIO B: Playlist atau Tidak Loop --
-      // Gunakan concat demuxer standar tapi dengan ghost playlist untuk keamanan
+      // -- SKENARIO B: Playlist / Non-Loop --
       else {
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           
-          // Escape single quote untuk FFmpeg concat list
           const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
           let playlistContent = safeFiles.join('\n');
 
-          // Jika loop playlist banyak file, kita duplikasi listnya
           if (loop) {
              const oneSet = '\n' + playlistContent;
              for(let i=0; i<100; i++) playlistContent += oneSet;
@@ -164,37 +184,39 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           fs.writeFileSync(currentPlaylistPath, playlistContent);
 
           command.input(currentPlaylistPath)
-                 .inputOptions([
-                     '-f', 'concat', 
-                     '-safe', '0', 
-                     '-re'
-                 ]);
+                 .inputOptions(['-f', 'concat', '-safe', '0', '-re']);
                  
-          // Standard Filter untuk Playlist
-          command.complexFilter([
+          const filters = [
              { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
              { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
              { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
-             { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' },
-             
-             { filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' },
-             { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
-          ], ['v_out', 'a_out']);
+             { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' }
+          ];
+
+          if (hasFileAudio) {
+             // Audio normal dari video
+             filters.push({ filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' });
+             filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
+          } else {
+             // Inject Silence Source as Input #1
+             command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi');
+             // Map input 1:a (silence)
+             filters.push({ filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' });
+             filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
+          }
+
+          command.complexFilter(filters, ['v_out', 'a_out']);
       }
 
-      // -- OUTPUT OPTIONS (SAMA UNTUK KEDUA SKENARIO VIDEO) --
+      // -- OUTPUT OPTIONS (Common) --
       command.outputOptions([
         '-map [v_out]', '-map [a_out]',
-        
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency',
-        '-r 30', '-g 60', // Keyframe wajib tiap 2 detik
+        '-r 30', '-g 60', 
         '-pix_fmt yuv420p',
-        
-        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k', // Bitrate stabil
+        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k',
         '-nal-hrd cbr',
-        
         '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',
-        
         '-f flv', '-flvflags no_duration_filesize'
       ]);
     }
@@ -203,7 +225,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream ${streamId} started`);
-        // console.log(`[Cmd] ${commandLine}`); 
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
@@ -265,7 +286,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         } else {
             if (!err.message.includes('SIGKILL') && !err.message.includes('write after end')) {
                 console.error(`[FFmpeg Error Stream ${streamId}] ${err.message}`);
-                // if(stderr) console.error(stderr);
+                if(stderr) console.error(stderr);
             }
         }
         cleanupStream(streamId);
