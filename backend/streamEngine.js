@@ -19,11 +19,31 @@ const killZombieProcesses = () => {
     });
 }
 
-// Helper: Create Playlist File for Concat Demuxer
-const createPlaylistFile = (files, outputPath) => {
-    // Format Concat: file '/path/to/file.mp3'
-    const content = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
-    fs.writeFileSync(outputPath, content);
+// ============================================================================
+// STRATEGI BARU: PSEUDO-INFINITE PLAYLIST
+// Alih-alih flag '-stream_loop -1' (yang sering error timestamp),
+// Kita tulis ulang daftar file sebanyak 500x di dalam file .txt.
+// Bagi FFmpeg, ini adalah satu daftar putar linear yang sangat panjang.
+// ============================================================================
+const createInfinitePlaylistFile = (files, outputPath, loop) => {
+    // Bersihkan path file agar aman
+    const safeFiles = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`);
+    
+    let content = [];
+    
+    if (loop) {
+        // Jika mode LOOP: Ulangi daftar lagu sebanyak 500 kali
+        // Jika 1 album (10 lagu @ 3 menit) = 30 menit.
+        // 500 kali = 15.000 menit = 250 Jam (10 Hari nonstop).
+        // Cukup 'Infinite' untuk praktisnya.
+        for (let i = 0; i < 500; i++) {
+            content = content.concat(safeFiles);
+        }
+    } else {
+        content = safeFiles;
+    }
+    
+    fs.writeFileSync(outputPath, content.join('\n'));
     return outputPath;
 };
 
@@ -42,68 +62,67 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let playlistPath = null;
     let hasStarted = false;
 
-    console.log(`[Stream ${streamId}] Starting Mode: STABLE RADIO (Native Loop + Timestamp Fix)`);
+    console.log(`[Stream ${streamId}] Starting Mode: PSEUDO-INFINITE (Brute Force Loop)`);
 
     // ---------------------------------------------------------
-    // INPUT 0: VISUAL (GAMBAR) - MASTER CLOCK
+    // INPUT 0: VISUAL (GAMBAR/VIDEO) - MASTER CLOCK
     // ---------------------------------------------------------
-    // Kita gunakan gambar sebagai penentu kecepatan stream (-re).
-    // Framerate 15fps cukup untuk gambar diam (sangat ringan).
+    // Kita gunakan '-re' (Realtime) HANYA pada input visual.
+    // Ini menjadi 'jantung' detak waktu stream.
     
     if (coverImagePath && fs.existsSync(coverImagePath)) {
         if (coverImagePath.endsWith('.mp4')) {
              // Jika Video
-             command.input(coverImagePath).inputOptions(['-stream_loop', '-1', '-re']);
+             command.input(coverImagePath).inputOptions([
+                 '-stream_loop', '-1', // Loop video
+                 '-re'                 // Realtime limit
+             ]);
         } else {
              // Jika Gambar (JPG/PNG)
              command.input(coverImagePath).inputOptions([
-                 '-loop', '1',       // Loop gambar
-                 '-re',              // Realtime Reading (PENTING AGAR TIDAK BUFFERING)
-                 '-framerate', '15'  // 15 FPS cukup untuk radio, hemat bandwidth & CPU
+                 '-loop', '1',       // Loop gambar selamanya
+                 '-re',              // Realtime limit (PENTING)
+                 '-framerate', '25'  // FPS Standard YouTube (Jangan terlalu rendah)
              ]);
         }
     } else {
         // Fallback Layar Hitam
-        command.input('color=c=black:s=1280x720:r=15').inputFormat('lavfi').inputOptions(['-re']);
+        command.input('color=c=black:s=1280x720:r=25').inputFormat('lavfi').inputOptions(['-re']);
     }
 
     // ---------------------------------------------------------
-    // INPUT 1: AUDIO (PLAYLIST)
+    // INPUT 1: AUDIO (PSEUDO-INFINITE LIST)
     // ---------------------------------------------------------
+    // Kita gunakan concat demuxer biasa, tapi filenya sudah berisi perulangan 500x.
+    // JANGAN GUNAKAN '-stream_loop' disini agar timestamp linear & mulus.
     
     if (mp3Files.length > 0) {
-        // Buat file playlist.txt sementara
         playlistPath = path.join(__dirname, 'uploads', `playlist_${streamId}.txt`);
-        createPlaylistFile(mp3Files, playlistPath);
+        createInfinitePlaylistFile(mp3Files, playlistPath, loop);
 
         command.input(playlistPath).inputOptions([
-            '-f', 'concat',      // Gunakan fitur concat demuxer
-            '-safe', '0',        // Izinkan path file bebas
-            ...(loop ? ['-stream_loop', '-1'] : []) // Loop di level input (sebelum dibaca)
+            '-f', 'concat',      // Protokol Concat
+            '-safe', '0'         // Izinkan path absolut
+            // HAPUS '-stream_loop -1' (Kita sudah loop manual di text file)
         ]);
     } else {
         command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi');
     }
 
     // ---------------------------------------------------------
-    // COMPLEX FILTER (THE FIX)
+    // FILTERS
     // ---------------------------------------------------------
-    // 1. [0:v] Video di-scale dan setpts dibuat realtime.
-    // 2. [1:a] Audio di-resample DAN timestamp dibuat ulang (asetpts).
-    //    'asetpts=N/SR/TB' membuat timestamp monoton naik terus menerus 
-    //    berdasarkan jumlah sample, mengabaikan reset timestamp saat loop terjadi.
+    // Tidak perlu 'asetpts' rumit karena input concat sudah linear.
+    // Cukup pastikan format visual dan sample rate audio benar.
     
     const filters = [
-        // Video Logic
+        // Visual: Scale 720p, format YUV420P (Wajib YouTube)
         { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
         { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
         { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
 
-        // Audio Logic (THE SECRET SAUCE)
-        // aresample=async=1: Sinkronisasi drift waktu
-        // asetpts=N/SR/TB: Generate timestamp baru yang linear (Anti-Putus)
-        { filter: 'aresample', options: '44100:async=1', inputs: '1:a', outputs: 'resampled' },
-        { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
+        // Audio: Resample ke 44.1kHz standar
+        { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'a_out' }
     ];
 
     command.complexFilter(filters);
@@ -114,23 +133,23 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command.outputOptions([
         '-map [v_out]', '-map [a_out]',
         
-        // Video Encoding (Sangat Ringan)
+        // Video Codec (H.264)
         '-c:v libx264', 
-        '-preset ultrafast', // Prioritas kecepatan CPU
-        '-tune zerolatency', // Mengurangi latency
-        '-r 15',             // Output 15 FPS (Sesuai input)
-        '-g 30',             // Keyframe tiap 2 detik (15*2) - Wajib untuk YouTube
-        '-b:v 1000k',        // Bitrate visual rendah (cukup untuk static image)
-        '-maxrate 1500k',
-        '-bufsize 3000k',
+        '-preset ultrafast', // Hemat CPU VPS
+        '-tune zerolatency', // Streaming Mode
+        '-g 50',             // Keyframe tiap 2 detik (25fps * 2) - YouTube Suka ini
+        '-b:v 2000k',        // Bitrate Video (Cukup tajam, tidak terlalu berat)
+        '-maxrate 2500k',
+        '-bufsize 5000k',    // Buffer cukup besar untuk menahan fluktuasi
 
-        // Audio Encoding
+        // Audio Codec (AAC)
         '-c:a aac', 
         '-b:a 128k', 
         '-ar 44100',
         '-ac 2',
 
-        // Protocol RTMP/FLV
+        // System Tuning
+        '-max_muxing_queue_size 9999', // Mencegah error 'Too many packets' saat loading playlist
         '-f flv',
         '-flvflags no_duration_filesize'
     ]);
@@ -141,13 +160,12 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream Started: ${streamId}`);
-        // console.log(commandLine); // Debug command
         hasStarted = true;
         
         activeStreams.set(streamId, { 
             command, 
             userId, 
-            playlistPath, // Simpan path untuk dihapus nanti
+            playlistPath, 
             startTime: Date.now(), 
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
             name: title || `Radio ${streamId.substr(0,4)}`
@@ -160,7 +178,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         resolve(streamId);
       })
       .on('progress', (progress) => {
-        // Logic Usage Database
         const currentTimemark = progress.timemark; 
         let totalSeconds = 0;
         if(currentTimemark) {
@@ -208,7 +225,6 @@ const cleanupStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (!stream) return;
   
-  // Hapus file playlist temp
   if (stream.playlistPath && fs.existsSync(stream.playlistPath)) {
       try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
   }
