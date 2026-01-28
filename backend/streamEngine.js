@@ -39,8 +39,11 @@ const checkFileHasAudio = (filePath) => {
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
   const { userId, loop = false, coverImagePath, title, description } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
-  const isAllAudio = files.every(f => f.toLowerCase().endsWith('.mp3'));
   
+  // CLASSIFY FILES
+  const mp3Files = files.filter(f => f.toLowerCase().endsWith('.mp3'));
+  const videoFiles = files.filter(f => !f.toLowerCase().endsWith('.mp3')); // Assume non-mp3 is video in this context
+
   const streamId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   
   return new Promise(async (resolve, reject) => {
@@ -51,9 +54,59 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let hasStarted = false;
 
     // =========================================================
-    // 1. AUDIO MODE (MP3)
+    // MODE 3: HYBRID (VIDEO CLIP + MP3 AUDIO)
+    // "Mp4 berperan sebagai video clip, suara dari mp3"
     // =========================================================
-    if (isAllAudio) {
+    if (videoFiles.length > 0 && mp3Files.length > 0) {
+        console.log(`[Stream ${streamId}] Mode: HYBRID (Visual: MP4, Audio: MP3 Playlist)`);
+        
+        // Input 0: VIDEO SOURCE (MP4)
+        // Kita loop videonya (-stream_loop -1) agar jika lagu lebih panjang dari video, visual tidak mati.
+        // Kita gunakan video pertama yang dipilih sebagai visual utama.
+        command.input(videoFiles[0]).inputOptions([
+            '-stream_loop -1', 
+            '-re'
+        ]);
+
+        // Input 1: AUDIO SOURCE (MP3 Playlist)
+        // Kita buat playlist untuk file-file MP3
+        const uniqueId = streamId;
+        currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
+        const safeAudioFiles = mp3Files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
+        let playlistContent = safeAudioFiles.join('\n');
+        
+        if (loop) {
+            // Jika mode loop aktif, duplikasi playlist mp3
+            const oneSet = '\n' + playlistContent;
+            for(let i=0; i<50; i++) playlistContent += oneSet;
+        }
+        fs.writeFileSync(currentPlaylistPath, playlistContent);
+        
+        command.input(currentPlaylistPath).inputOptions(['-f concat', '-safe 0', '-re']);
+
+        // COMPLEX FILTER: Gabungkan Visual (0) dan Audio (1)
+        // 0:v -> Video dari input pertama
+        // 1:a -> Audio dari input kedua (playlist mp3)
+        // Kita abaikan audio dari video asli (0:a)
+        command.complexFilter([
+            // Video Processing (Input 0)
+            { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
+            { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
+            { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
+            { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' },
+            
+            // Audio Processing (Input 1 - Playlist MP3)
+            { filter: 'aresample', options: '44100:async=1', inputs: '1:a', outputs: 'resampled' },
+            { filter: 'aformat', options: 'sample_fmts=fltp:channel_layouts=stereo', inputs: 'resampled', outputs: 'a_out' }
+        ]);
+        
+        command.addOption('-max_muxing_queue_size', '4096');
+    }
+
+    // =========================================================
+    // MODE 1: AUDIO ONLY (MP3 + Cover Image)
+    // =========================================================
+    else if (videoFiles.length === 0 && mp3Files.length > 0) {
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
       } else {
@@ -97,8 +150,9 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
       ]);
     } 
+
     // =========================================================
-    // 2. VIDEO MODE (MP4) - ROBUST AUDIO FIX
+    // MODE 2: VIDEO ONLY (MP4 Original)
     // =========================================================
     else {
       let hasFileAudio = false;
@@ -142,37 +196,17 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ];
 
       if (hasFileAudio) {
-          // FIX AUDIO BISU:
-          // 1. aresample=async=1: Menangani desync audio bitrate rendah
-          // 2. aformat=sample_fmts=fltp:channel_layouts=stereo: Memaksa format internal FFmpeg agar kompatibel dengan encoder AAC
-          // 3. volume=1.0: Memastikan gain tidak nol
-          filters.push({ 
-              filter: 'aresample', 
-              options: '44100:async=1', 
-              inputs: '0:a', 
-              outputs: 'resampled' 
-          });
-          filters.push({ 
-              filter: 'aformat', 
-              options: 'sample_fmts=fltp:channel_layouts=stereo', 
-              inputs: 'resampled', 
-              outputs: 'formatted' 
-          });
-          filters.push({ 
-              filter: 'asetpts', 
-              options: 'N/SR/TB', 
-              inputs: 'formatted', 
-              outputs: 'a_out' 
-          });
+          // Standard Video+Audio processing
+          filters.push({ filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' });
+          filters.push({ filter: 'aformat', options: 'sample_fmts=fltp:channel_layouts=stereo', inputs: 'resampled', outputs: 'formatted' });
+          filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'formatted', outputs: 'a_out' });
       } else {
-          // Fallback ke silence jika file benar-benar bisu
+          // Fallback ke silence jika file video aslinya bisu
           filters.push({ filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
       }
 
       command.complexFilter(filters);
-      
-      // Mencegah buffer underrun pada file bitrate rendah
       command.addOption('-max_muxing_queue_size', '4096');
     }
 

@@ -222,7 +222,17 @@ router.post('/playlist/start', async (req, res) => {
       let playlistPaths = [];
       let finalCoverPath = null;
 
-      if (videoFiles.length > 0) {
+      // UPDATE LOGIC: Mendukung Mixed (Hybrid) Mode
+      if (videoFiles.length > 0 && audioFiles.length > 0) {
+          // HYBRID MODE: Gabungkan array, Video dulu baru Audio
+          // Engine akan memisahkan nanti.
+          if (!plan.allowed_types.includes('video')) return res.status(403).json({ error: "Paket Anda tidak mendukung Video." });
+          playlistPaths = [
+              ...videoFiles.map(v => v.path),
+              ...audioFiles.map(a => a.path)
+          ];
+      }
+      else if (videoFiles.length > 0) {
         if (!plan.allowed_types.includes('video')) return res.status(403).json({ error: "Hanya Audio yang didukung paket ini." });
         playlistPaths = videoFiles.map(v => v.path);
       } 
@@ -233,10 +243,11 @@ router.post('/playlist/start', async (req, res) => {
             if(cov) finalCoverPath = cov.path;
         }
         if (!finalCoverPath && imageFiles.length > 0) finalCoverPath = imageFiles[0].path; 
-      } 
+      } else {
+        return res.status(400).json({ error: "Tipe file tidak valid untuk streaming." });
+      }
 
       try {
-          // startStream kini return Promise<streamId>
           const streamId = await startStream(playlistPaths, rtmpUrl, { userId, loop: !!loop, coverImagePath: finalCoverPath, title, description });
           res.json({ success: true, message: `Streaming dimulai.`, streamId });
       } catch (e) { res.status(500).json({ error: "Engine Error: " + e.message }); }
