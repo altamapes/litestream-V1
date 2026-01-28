@@ -7,7 +7,7 @@ const { db } = require('./database');
 
 // MARKER: PASTIKAN INI MUNCUL DI LOG
 console.log("\n==================================================");
-console.log("!!! LITESTREAM ENGINE V6 (STABLE LOW CPU) !!!");
+console.log("!!! LITESTREAM ENGINE V7 (STABLE & LOW CPU) !!!");
 console.log("==================================================\n");
 
 const activeStreams = new Map();
@@ -64,7 +64,7 @@ const preProcessImage = (input, userId) => {
 const startStream = async (inputPaths, destinations, options = {}) => {
     const streamId = Date.now().toString().slice(-6);
     const userId = options.userId;
-    console.log(`[StreamEngine ${streamId}] Initializing (V6 Low CPU)...`);
+    console.log(`[StreamEngine ${streamId}] Initializing (V7 Stable)...`);
 
     let targets = (Array.isArray(destinations) ? destinations : [destinations]).filter(function(d) { return d && d.trim(); });
     if (targets.length === 0) throw new Error("No destinations provided");
@@ -78,24 +78,17 @@ const startStream = async (inputPaths, destinations, options = {}) => {
     const hasAudio = files.some(function(f) { return audioExts.includes(path.extname(f).toLowerCase()); });
     const hasVideo = files.some(function(f) { return !audioExts.includes(path.extname(f).toLowerCase()) && !imageExts.includes(path.extname(f).toLowerCase()); });
     
-    // Strict Mode Logic
     let isStaticMode = false;
-    if (hasAudio && !hasVideo) isStaticMode = true; // Audio Only
+    if (hasAudio && !hasVideo) isStaticMode = true; 
     
-    let isVideoMode = false;
-    if (hasVideo) isVideoMode = true; // Video (mixed or single)
-
     let finalImage = null;
     let tempBgPath = null;
     
-    // Pre-process cover image if needed
     if (isStaticMode) {
         let coverImage = options.coverImagePath;
-        // Jika tidak ada cover, dan ini slideshow (banyak gambar + audio), pakai gambar pertama
         if (!coverImage && files.some(f => imageExts.includes(path.extname(f).toLowerCase()))) {
             coverImage = files.find(f => imageExts.includes(path.extname(f).toLowerCase()));
         }
-        
         if (coverImage) {
             finalImage = await preProcessImage(coverImage, options.userId);
             if (finalImage && finalImage !== coverImage) tempBgPath = finalImage;
@@ -106,56 +99,59 @@ const startStream = async (inputPaths, destinations, options = {}) => {
         const command = ffmpeg();
         let playlistPath = null;
         
-        // --- OPTIMISASI CPU LEVEL 2 (Aggressive) ---
+        // --- OPTIMISASI CPU V7 ---
         const FPS = isStaticMode ? 10 : 23; 
         const BITRATE = isStaticMode ? '1000k' : '2000k';
         
+        // Penting: Probe size kecil agar cepat init
         command.inputOptions(['-analyzeduration 10000000', '-probesize 10000000']);
 
-        // --- INPUT BUILDER ---
+        // --- INPUT CONFIGURATION ---
         if (isStaticMode) {
-            console.log(`[StreamEngine ${streamId}] Mode: STATIC AUDIO (Low CPU)`);
+            console.log(`[StreamEngine ${streamId}] Mode: STATIC AUDIO`);
             
             // INPUT 0: VISUAL
             if (finalImage) {
+                // Jika pakai gambar/video background
                 if (finalImage.endsWith('.mp4')) {
-                     command.input(finalImage).inputOptions(['-stream_loop', '-1', '-re']);
+                     command.addInput(finalImage).inputOptions(['-stream_loop', '-1', '-re']);
                 } else {
-                     command.input(finalImage).inputOptions(['-loop 1', `-framerate ${FPS}`, '-re']);
+                     command.addInput(finalImage).inputOptions(['-loop 1', `-framerate ${FPS}`, '-re']);
                 }
             } else {
-                // FIXED: Gunakan inputFormat('lavfi') agar fluent-ffmpeg mendeteksi ini sebagai input valid
-                command.input(`color=c=black:s=1280x720:r=${FPS}`).inputFormat('lavfi').inputOptions(['-re']);
+                // FIXED: Gunakan inputOptions('-f lavfi') agar lebih robust daripada inputFormat()
+                command.addInput(`color=c=black:s=1280x720:r=${FPS}`)
+                       .inputOptions(['-f lavfi', '-re']);
             }
 
             // INPUT 1: AUDIO
-            // Cek apakah user upload gambar saja (Slideshow) atau Audio file
             const audioOnlyFiles = files.filter(f => audioExts.includes(path.extname(f).toLowerCase()));
             
             if (audioOnlyFiles.length > 0) {
                  if (audioOnlyFiles.length === 1 && options.loop) {
-                    command.input(audioOnlyFiles[0]).inputOptions(['-stream_loop', '-1', '-re']);
+                    command.addInput(audioOnlyFiles[0]).inputOptions(['-stream_loop', '-1', '-re']);
                 } else {
                     playlistPath = createPlaylistFile(audioOnlyFiles);
                     const opts = ['-f', 'concat', '-safe', '0', '-re'];
                     if (options.loop) opts.unshift('-stream_loop', '-1');
-                    command.input(playlistPath).inputOptions(opts);
+                    command.addInput(playlistPath).inputOptions(opts);
                 }
             } else {
-                // Slideshow tanpa file audio (Silent)
-                command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi').inputOptions(['-re']);
+                // Silent Audio Generator
+                command.addInput('anullsrc=channel_layout=stereo:sample_rate=44100')
+                       .inputOptions(['-f lavfi', '-re']);
             }
             
-            // Mapping Wajib: Video dari Input 0, Audio dari Input 1
+            // Map Visual (0) dan Audio (1)
             command.outputOptions(['-map 0:v', '-map 1:a']);
             
-            // Filter ringan untuk resize/pad
+            // Filter ringan
             command.complexFilter([
                 `[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`
             ]);
 
         } else {
-            console.log(`[StreamEngine ${streamId}] Mode: VIDEO (Low CPU)`);
+            console.log(`[StreamEngine ${streamId}] Mode: VIDEO`);
             
             const videoFiles = files.filter(f => !audioExts.includes(path.extname(f).toLowerCase()) && !imageExts.includes(path.extname(f).toLowerCase()));
             
@@ -163,19 +159,16 @@ const startStream = async (inputPaths, destinations, options = {}) => {
                 playlistPath = createPlaylistFile(videoFiles);
                 const opts = ['-re', '-f', 'concat', '-safe', '0'];
                 if (options.loop) opts.unshift('-stream_loop', '-1');
-                command.input(playlistPath);
-                command.inputOptions(opts);
+                command.addInput(playlistPath).inputOptions(opts);
             } else {
-                // Fallback terakhir (jarang terjadi)
-                command.input(files[0]).inputOptions(['-re', '-stream_loop', '-1']);
+                command.addInput(files[0]).inputOptions(['-re', '-stream_loop', '-1']);
             }
 
-            let filters = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1';
-            command.outputOptions(`-vf ${filters}`);
+            command.outputOptions(`-vf scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1`);
             command.outputOptions(['-map 0:v', '-map 0:a?']); 
         }
 
-        // --- ENCODING SETTINGS (Low CPU) ---
+        // --- ENCODING SETTINGS (LOW CPU) ---
         const encOpts = [
             '-c:v libx264', 
             '-preset ultrafast', 
@@ -218,6 +211,8 @@ const startStream = async (inputPaths, destinations, options = {}) => {
 
         command.on('start', function(cmdLine) {
              console.log(`[StreamEngine ${streamId}] STARTED.`);
+             // Debug: Print command line to log for troubleshooting
+             // console.log("FFmpeg Command:", cmdLine); 
              if (global.io) {
                  global.io.emit('log', { type: 'start', message: `Stream Started.` });
                  global.io.emit('stream_started', { streamId });
@@ -237,9 +232,8 @@ const startStream = async (inputPaths, destinations, options = {}) => {
             cleanup(streamId);
         });
 
-        // Failsafe: Pastikan command.run() dipanggil
         try { 
-            // Validasi tambahan sebelum run
+            // Validasi: Pastikan inputs tidak kosong
             // @ts-ignore
             if (command._inputs.length === 0) {
                  reject(new Error("Internal Error: No inputs prepared."));
