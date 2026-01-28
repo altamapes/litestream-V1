@@ -6,14 +6,10 @@ const { PassThrough } = require('stream');
 const { exec } = require('child_process');
 const { db } = require('./database');
 
-// MARKER: PASTIKAN INI MUNCUL DI LOG
-console.log("\n==================================================");
-console.log("!!! LITESTREAM ENGINE: HIGH BITRATE CBR FIX !!!");
-console.log("==================================================\n");
-
 // Store active streams: key = streamId, value = { command, userId, playlistPath, activeInputStream, loop: boolean }
 const activeStreams = new Map();
 
+// Fungsi ini dibutuhkan oleh server.js untuk membersihkan proses saat restart
 const killZombieProcesses = () => {
     return new Promise((resolve) => {
          console.log('[System] Cleaning up zombie FFmpeg processes...');
@@ -28,7 +24,7 @@ const killZombieProcesses = () => {
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
   const { userId, loop = false, coverImagePath, title, description } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
-  const isAllAudio = files.every(function(f) { return f.toLowerCase().endsWith('.mp3'); });
+  const isAllAudio = files.every(f => f.toLowerCase().endsWith('.mp3'));
   
   // Generate Unique Stream ID
   const streamId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
@@ -73,12 +69,11 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       playNextSong();
 
-      // OPTIMIZED FOR LOW END VPS BUT FORCING BITRATE
-      // Increased noise to '5' to force encoder to generate bits
+      // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-        'noise=alls=5:allf=t+u', 
+        'noise=alls=1:allf=t+u', // Micro-noise to prevent bitrate drop
         'format=yuv420p'
       ].join(',');
 
@@ -97,17 +92,16 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
         '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', // 25 FPS Standard
         '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', 
-        '-bufsize 5000k',
-        // IMPORTANT: Force CBR Padding for YouTube/FB
-        '-x264-params', 'nal-hrd=cbr',
+        '-bufsize 5000k', // Relaxed buffer for audio mode too
+        '-nal-hrd cbr', 
         '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
     } 
-    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY & CBR) ---
+    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY) ---
     else {
-      // Standardize Video Filter
+      // Standardize Video Filter: Scale to 720p, Pad to 16:9
       const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
       
       // LOGIC BRANCH: Single File vs Playlist
@@ -126,7 +120,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           
           // Escape single quotes for ffmpeg concat file
-          const playlistContent = files.map(function(f) { return `file '${path.resolve(f).replace(/'/g, "'\\''")}'`; }).join('\n');
+          const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
           fs.writeFileSync(currentPlaylistPath, playlistContent);
 
           const videoInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
@@ -136,6 +130,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       }
       
       // UNIVERSAL OUTPUT OPTIONS (Transcoding)
+      // FIX: Relaxed buffers and added queue size to prevent MP4 crashes
       command.outputOptions([
         '-c:v libx264',
         '-preset ultrafast', 
@@ -147,14 +142,14 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-b:v 2500k',       // Target Bitrate
         '-minrate 2500k',   // FORCE Minimum Bitrate
         '-maxrate 2500k',   // FORCE Maximum Bitrate
-        '-bufsize 5000k',   // BUFFER
-        '-x264-params', 'nal-hrd=cbr', // FORCE FILLER DATA
-        '-max_muxing_queue_size 9999', 
+        '-bufsize 5000k',   // BUFFER INCREASED: Prevent underflow/overflow on complex scenes
+        '-nal-hrd cbr',     // Enforce CBR compliance
+        '-max_muxing_queue_size 9999', // FIX: Prevent "Too many packets buffered" error
         '-c:a aac',
         '-ar 44100',
         '-b:a 128k',
         '-ac 2',            
-        '-af aresample=async=1',
+        '-af aresample=async=1', // FIX: Ensure audio sync even if sample rate differs
         '-bsf:a aac_adtstoasc',
         '-f flv',
         '-flvflags no_duration_filesize'
@@ -182,7 +177,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       })
       .on('progress', (progress) => {
         const currentTimemark = progress.timemark; 
-        if (!currentTimemark) return;
         const parts = currentTimemark.split(':');
         const totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
         const diff = Math.floor(totalSeconds - lastProcessedSecond);
@@ -249,15 +243,14 @@ const cleanupStream = (streamId) => {
 };
 
 const stopStream = (streamId) => {
-  const realId = (typeof streamId === 'object') ? streamId.streamId : streamId;
-  const stream = activeStreams.get(realId);
+  const stream = activeStreams.get(streamId);
   if (stream) {
-    console.log(`[Stream] Stopping ${realId}...`);
+    console.log(`[Stream] Stopping ${streamId}...`);
     if (stream.activeInputStream) {
         try { stream.activeInputStream.end(); } catch(e) {}
     }
     try { stream.command.kill('SIGKILL'); } catch (e) {}
-    cleanupStream(realId);
+    cleanupStream(streamId);
     return true;
   }
   return false;
