@@ -7,7 +7,7 @@ const { db } = require('./database');
 
 // MARKER: PASTIKAN INI MUNCUL DI LOG
 console.log("\n==================================================");
-console.log("!!! LITESTREAM ENGINE V5 (LOW CPU EDITION) !!!");
+console.log("!!! LITESTREAM ENGINE V6 (STABLE LOW CPU) !!!");
 console.log("==================================================\n");
 
 const activeStreams = new Map();
@@ -24,21 +24,11 @@ const killZombieProcesses = () => {
     });
 }
 
-const getSystemFontPath = () => {
-    const fonts = [
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-        '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
-        'C:\\Windows\\Fonts\\arial.ttf'
-    ];
-    return fonts.find(function(f) { return fs.existsSync(f); }) || null;
-};
-
 const createPlaylistFile = (files) => {
     const uniqueId = Date.now() + '_' + Math.random().toString(36).substring(7);
     const playlistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
     
     let list = [...files];
-    // Duplikasi list agar buffer ffmpeg tidak kosong saat loop
     if (list.length < 5) list = [...list, ...list, ...list]; 
 
     const content = list.map(function(f) {
@@ -74,13 +64,13 @@ const preProcessImage = (input, userId) => {
 const startStream = async (inputPaths, destinations, options = {}) => {
     const streamId = Date.now().toString().slice(-6);
     const userId = options.userId;
-    console.log(`[StreamEngine ${streamId}] Initializing (Low CPU Mode)...`);
+    console.log(`[StreamEngine ${streamId}] Initializing (V6 Low CPU)...`);
 
     let targets = (Array.isArray(destinations) ? destinations : [destinations]).filter(function(d) { return d && d.trim(); });
     if (targets.length === 0) throw new Error("No destinations provided");
 
     let files = (Array.isArray(inputPaths) ? inputPaths : [inputPaths]).filter(function(f) { return fs.existsSync(f); });
-    if (files.length === 0) throw new Error("Files missing.");
+    if (files.length === 0) throw new Error("Files missing or not found on disk.");
 
     const audioExts = ['.mp3', '.aac', '.wav', '.m4a', '.flac', '.ogg'];
     const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
@@ -88,15 +78,23 @@ const startStream = async (inputPaths, destinations, options = {}) => {
     const hasAudio = files.some(function(f) { return audioExts.includes(path.extname(f).toLowerCase()); });
     const hasVideo = files.some(function(f) { return !audioExts.includes(path.extname(f).toLowerCase()) && !imageExts.includes(path.extname(f).toLowerCase()); });
     
-    const isStaticMode = !hasVideo && hasAudio; 
-    const isSlideshowMode = !hasVideo && !hasAudio; 
+    // Strict Mode Logic
+    let isStaticMode = false;
+    if (hasAudio && !hasVideo) isStaticMode = true; // Audio Only
+    
+    let isVideoMode = false;
+    if (hasVideo) isVideoMode = true; // Video (mixed or single)
 
     let finalImage = null;
     let tempBgPath = null;
     
-    if (isStaticMode || isSlideshowMode) {
+    // Pre-process cover image if needed
+    if (isStaticMode) {
         let coverImage = options.coverImagePath;
-        if (isSlideshowMode && files.length > 0 && !coverImage) coverImage = files[0];
+        // Jika tidak ada cover, dan ini slideshow (banyak gambar + audio), pakai gambar pertama
+        if (!coverImage && files.some(f => imageExts.includes(path.extname(f).toLowerCase()))) {
+            coverImage = files.find(f => imageExts.includes(path.extname(f).toLowerCase()));
+        }
         
         if (coverImage) {
             finalImage = await preProcessImage(coverImage, options.userId);
@@ -106,21 +104,19 @@ const startStream = async (inputPaths, destinations, options = {}) => {
 
     return new Promise(function(resolve, reject) {
         const command = ffmpeg();
-        let inputCount = 0;
         let playlistPath = null;
         
-        // OPTIMISASI CPU 1: Kurangi Analyze Duration
-        command.inputOptions(['-analyzeduration 10000000', '-probesize 10000000']);
+        // --- OPTIMISASI CPU LEVEL 2 (Aggressive) ---
+        const FPS = isStaticMode ? 10 : 23; 
+        const BITRATE = isStaticMode ? '1000k' : '2000k';
         
-        // OPTIMISASI CPU 2: FPS Rendah
-        // Mode Radio: 10 FPS (Sangat ringan)
-        // Mode Video: 23 FPS (Standar minimal, lebih ringan dari 30)
-        const FPS = (isStaticMode || isSlideshowMode) ? 10 : 23;
-        const BITRATE = (isStaticMode || isSlideshowMode) ? '1000k' : '2000k';
+        command.inputOptions(['-analyzeduration 10000000', '-probesize 10000000']);
 
-        // --- INPUT CONFIGURATION ---
-        if (isStaticMode || isSlideshowMode) {
-            // Static/Radio
+        // --- INPUT BUILDER ---
+        if (isStaticMode) {
+            console.log(`[StreamEngine ${streamId}] Mode: STATIC AUDIO (Low CPU)`);
+            
+            // INPUT 0: VISUAL
             if (finalImage) {
                 if (finalImage.endsWith('.mp4')) {
                      command.input(finalImage).inputOptions(['-stream_loop', '-1', '-re']);
@@ -128,96 +124,81 @@ const startStream = async (inputPaths, destinations, options = {}) => {
                      command.input(finalImage).inputOptions(['-loop 1', `-framerate ${FPS}`, '-re']);
                 }
             } else {
-                command.input(`color=c=black:s=1280x720:r=${FPS}`).inputOptions(['-f lavfi', '-re']);
+                // FIXED: Gunakan inputFormat('lavfi') agar fluent-ffmpeg mendeteksi ini sebagai input valid
+                command.input(`color=c=black:s=1280x720:r=${FPS}`).inputFormat('lavfi').inputOptions(['-re']);
             }
-            inputCount++;
 
-            if (isSlideshowMode) {
-                command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputOptions(['-f lavfi', '-re']);
-            } else {
-                if (files.length === 1 && options.loop) {
-                    command.input(files[0]).inputOptions(['-stream_loop', '-1', '-re']);
+            // INPUT 1: AUDIO
+            // Cek apakah user upload gambar saja (Slideshow) atau Audio file
+            const audioOnlyFiles = files.filter(f => audioExts.includes(path.extname(f).toLowerCase()));
+            
+            if (audioOnlyFiles.length > 0) {
+                 if (audioOnlyFiles.length === 1 && options.loop) {
+                    command.input(audioOnlyFiles[0]).inputOptions(['-stream_loop', '-1', '-re']);
                 } else {
-                    playlistPath = createPlaylistFile(files);
+                    playlistPath = createPlaylistFile(audioOnlyFiles);
                     const opts = ['-f', 'concat', '-safe', '0', '-re'];
                     if (options.loop) opts.unshift('-stream_loop', '-1');
                     command.input(playlistPath).inputOptions(opts);
                 }
+            } else {
+                // Slideshow tanpa file audio (Silent)
+                command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi').inputOptions(['-re']);
             }
-            inputCount++;
             
+            // Mapping Wajib: Video dari Input 0, Audio dari Input 1
             command.outputOptions(['-map 0:v', '-map 1:a']);
             
-            // Filter ringan untuk resize
+            // Filter ringan untuk resize/pad
             command.complexFilter([
                 `[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`
             ]);
 
         } else {
-            // Video Mode
-            const videoFiles = files.filter(function(f) { 
-                return !audioExts.includes(path.extname(f).toLowerCase()) && !imageExts.includes(path.extname(f).toLowerCase()); 
-            });
+            console.log(`[StreamEngine ${streamId}] Mode: VIDEO (Low CPU)`);
+            
+            const videoFiles = files.filter(f => !audioExts.includes(path.extname(f).toLowerCase()) && !imageExts.includes(path.extname(f).toLowerCase()));
             
             if (videoFiles.length > 0) {
-                // Gunakan Playlist untuk keamanan loop
                 playlistPath = createPlaylistFile(videoFiles);
                 const opts = ['-re', '-f', 'concat', '-safe', '0'];
                 if (options.loop) opts.unshift('-stream_loop', '-1');
                 command.input(playlistPath);
                 command.inputOptions(opts);
-                inputCount++;
             } else {
-                // Fallback
+                // Fallback terakhir (jarang terjadi)
                 command.input(files[0]).inputOptions(['-re', '-stream_loop', '-1']);
-                inputCount++;
             }
 
-            // Simple Filter
             let filters = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1';
             command.outputOptions(`-vf ${filters}`);
             command.outputOptions(['-map 0:v', '-map 0:a?']); 
         }
 
-        // --- OPTIMISASI CPU 3: ENCODING SUPER RINGAN ---
+        // --- ENCODING SETTINGS (Low CPU) ---
         const encOpts = [
-            // Video
             '-c:v libx264', 
             '-preset ultrafast', 
             '-tune zerolatency', 
-            '-profile:v baseline', // Profile paling enteng
+            '-profile:v baseline', 
+            '-threads 1', // WAJIB UNTUK VPS 1 CORE
             
-            // Limit Resource
-            '-threads 1',          // Paksa 1 thread (PENTING untuk VPS 1 Core agar tidak thrashing)
-            
-            // x264 Aggressive Hacks (Kualitas turun dikit, CPU turun banyak)
+            // Hack x264 untuk CPU Rendah
             '-x264-params', 'subme=0:me_range=4:rc_lookahead=10:me=dia:no_deblock=1',
             
-            // Rate Control
-            `-b:v ${BITRATE}`, 
-            `-maxrate ${BITRATE}`, 
-            `-bufsize ${parseInt(BITRATE)*2}k`, 
-            `-r ${FPS}`, 
-            `-g ${FPS*2}`, // Keyframe interval 2 detik
-            
-            // Format
+            `-b:v ${BITRATE}`, `-maxrate ${BITRATE}`, `-bufsize ${parseInt(BITRATE)*2}k`, 
+            `-r ${FPS}`, `-g ${FPS*2}`,
             '-pix_fmt yuv420p', 
             
-            // Audio (AAC LC Low Profile)
-            '-c:a aac', 
-            '-b:a 96k',   // Turunkan bitrate audio dikit
-            '-ar 44100', 
-            '-ac 2',
-            
-            // Output
-            '-f flv', 
-            '-flvflags no_duration_filesize'
+            '-c:a aac', '-b:a 96k', '-ar 44100', '-ac 2',
+            '-f flv', '-flvflags no_duration_filesize'
         ];
 
+        // Output Handling
         if (targets.length === 1) {
             command.output(targets[0]).outputOptions(encOpts);
         } else {
-            const tee = targets.map(function(t) { return `[f=flv:onfail=ignore]${t}`; }).join('|');
+            const tee = targets.map(t => `[f=flv:onfail=ignore]${t}`).join('|');
             command.output(tee).outputOptions(encOpts).outputOptions('-f tee');
         }
 
@@ -236,7 +217,7 @@ const startStream = async (inputPaths, destinations, options = {}) => {
         });
 
         command.on('start', function(cmdLine) {
-             console.log(`[StreamEngine ${streamId}] STARTED (V5 LOW CPU).`);
+             console.log(`[StreamEngine ${streamId}] STARTED.`);
              if (global.io) {
                  global.io.emit('log', { type: 'start', message: `Stream Started.` });
                  global.io.emit('stream_started', { streamId });
@@ -256,12 +237,18 @@ const startStream = async (inputPaths, destinations, options = {}) => {
             cleanup(streamId);
         });
 
-        if (inputCount === 0) {
-            reject(new Error("Internal Error: No inputs specified."));
-            return;
+        // Failsafe: Pastikan command.run() dipanggil
+        try { 
+            // Validasi tambahan sebelum run
+            // @ts-ignore
+            if (command._inputs.length === 0) {
+                 reject(new Error("Internal Error: No inputs prepared."));
+                 return;
+            }
+            command.run(); 
+        } catch (e) { 
+            reject(new Error("Engine failed: " + e.message)); 
         }
-
-        try { command.run(); } catch (e) { reject(new Error("Engine failed: " + e.message)); }
     });
 };
 
