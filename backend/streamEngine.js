@@ -36,13 +36,21 @@ const checkFileHasAudio = (filePath) => {
     });
 };
 
+// Helper: Generate Playlist Content
+const createPlaylistFile = (files, outputPath) => {
+    const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
+    const content = safeFiles.join('\n');
+    fs.writeFileSync(outputPath, content);
+    return outputPath;
+};
+
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
   const { userId, loop = false, coverImagePath, title, description } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
   
   // CLASSIFY FILES
   const mp3Files = files.filter(f => f.toLowerCase().endsWith('.mp3'));
-  const videoFiles = files.filter(f => !f.toLowerCase().endsWith('.mp3')); // Assume non-mp3 is video in this context
+  const videoFiles = files.filter(f => !f.toLowerCase().endsWith('.mp3')); 
 
   const streamId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   
@@ -50,7 +58,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let command = ffmpeg();
     let lastProcessedSecond = 0;
     let currentPlaylistPath = null;
-    let activeInputStream = null;
     let hasStarted = false;
 
     // =========================================================
@@ -61,35 +68,27 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         console.log(`[Stream ${streamId}] Mode: HYBRID (Visual: MP4, Audio: MP3 Playlist)`);
         
         // Input 0: VIDEO SOURCE (MP4)
-        // Loop video secara visual (-stream_loop -1)
+        // Visual selalu di-loop (-stream_loop -1)
         command.input(videoFiles[0]).inputOptions([
-            '-stream_loop -1', 
+            '-stream_loop', '-1', 
             '-re'
         ]);
 
-        // Input 1: AUDIO SOURCE (MP3 Playlist)
+        // Input 1: AUDIO SOURCE (MP3 Playlist via Concat)
         const uniqueId = streamId;
         currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
+        createPlaylistFile(mp3Files, currentPlaylistPath);
         
-        // Kita tidak perlu menduplikasi isi text file berulang kali.
-        // Cukup list file sekali, dan biarkan FFmpeg yang meloop input ini.
-        const safeAudioFiles = mp3Files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
-        const playlistContent = safeAudioFiles.join('\n');
+        const audioInputOptions = ['-f', 'concat', '-safe', '0', '-re'];
         
-        fs.writeFileSync(currentPlaylistPath, playlistContent);
-        
-        // Setup opsi input audio
-        const audioInputOptions = ['-f concat', '-safe 0', '-re'];
-        
-        // FIX: Tambahkan -stream_loop -1 JIKA user meminta loop.
-        // Ini akan membuat playlist audio diputar ulang terus menerus dari awal setelah lagu terakhir habis.
+        // FIX: Pisahkan '-stream_loop' dan '-1' sebagai argumen terpisah
         if (loop) {
-            audioInputOptions.unshift('-stream_loop -1'); 
+            audioInputOptions.unshift('-stream_loop', '-1'); 
         }
 
         command.input(currentPlaylistPath).inputOptions(audioInputOptions);
 
-        // COMPLEX FILTER: Gabungkan Visual (0) dan Audio (1)
+        // COMPLEX FILTER
         command.complexFilter([
             // Video Processing (Input 0)
             { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
@@ -106,51 +105,44 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     }
 
     // =========================================================
-    // MODE 1: AUDIO ONLY (MP3 + Cover Image)
+    // MODE 1: AUDIO ONLY (MP3 Playlist + Cover Image)
+    // REFACTORED: Menggunakan Playlist Concat (Native FFmpeg) agar loop stabil
     // =========================================================
     else if (videoFiles.length === 0 && mp3Files.length > 0) {
-      if (!coverImagePath || !fs.existsSync(coverImagePath)) {
-        command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
-      } else {
-        command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 25', '-re']); 
-      }
+        console.log(`[Stream ${streamId}] Mode: AUDIO ONLY (Image + MP3 Playlist)`);
 
-      const mixedStream = new PassThrough();
-      activeInputStream = mixedStream;
-      let fileIndex = 0;
-
-      const playNextSong = () => {
-        if (hasStarted && !activeStreams.has(streamId)) {
-            try { mixedStream.end(); } catch(e){}
-            return;
+        // Input 0: COVER IMAGE (Looped)
+        if (!coverImagePath || !fs.existsSync(coverImagePath)) {
+            command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f', 'lavfi', '-re']);
+        } else {
+            // Loop image tak terbatas
+            command.input(coverImagePath).inputOptions(['-loop', '1', '-framerate', '25', '-re']); 
         }
-        if (fileIndex >= files.length) {
-            if (loop) { fileIndex = 0; } 
-            else { mixedStream.end(); return; }
-        }
-        const currentFile = files[fileIndex];
-        const songStream = fs.createReadStream(currentFile);
-        songStream.pipe(mixedStream, { end: false });
-        songStream.on('end', () => {
-           fileIndex++;
-           setTimeout(playNextSong, 10);
-        });
-        songStream.on('error', (err) => {
-           fileIndex++;
-           playNextSong();
-        });
-      };
-      playNextSong();
 
-      command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']);
+        // Input 1: AUDIO PLAYLIST (MP3s)
+        const uniqueId = streamId;
+        currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_music_${uniqueId}.txt`);
+        createPlaylistFile(mp3Files, currentPlaylistPath);
+
+        const musicInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
+        
+        // FIX: Apply loop to audio playlist input
+        if (loop) {
+            musicInputOpts.unshift('-stream_loop', '-1');
+        }
+
+        command.input(currentPlaylistPath).inputOptions(musicInputOpts);
       
-      command.complexFilter([
-          { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
-          { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
-          { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
-          { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' },
-          { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
-      ]);
+        command.complexFilter([
+            // Video (Image) Processing
+            { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
+            { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
+            { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
+            
+            // Audio Processing
+            { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' },
+            { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
+        ]);
     } 
 
     // =========================================================
@@ -167,27 +159,18 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       if (files.length === 1 && loop) {
           command.input(files[0]).inputOptions([
               '-re', 
-              '-stream_loop -1', 
-              '-fflags +genpts',
-              '-map_metadata -1' 
+              '-stream_loop', '-1', 
+              '-fflags', '+genpts',
+              '-map_metadata', '-1' 
           ]);
       } else {
           // Playlist Logic
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
-          const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
-          let playlistContent = safeFiles.join('\n');
-          // Untuk mode video only, kita pakai loop manual concat jika multiple files
-          // Tapi jika loop, kita gunakan opsi concat loop juga
-          if (loop) {
-             // Opsi A: Duplicate content (Old way - reliable for strict concat)
-             // Opsi B: Use stream_loop -1 on concat input (Better)
-             // Kita ubah ke Opsi B agar konsisten
-          }
-          fs.writeFileSync(currentPlaylistPath, playlistContent);
+          createPlaylistFile(files, currentPlaylistPath);
           
-          const vidInputOpts = ['-f concat', '-safe 0', '-re'];
-          if (loop) vidInputOpts.unshift('-stream_loop -1');
+          const vidInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
+          if (loop) vidInputOpts.unshift('-stream_loop', '-1');
           
           command.input(currentPlaylistPath).inputOptions(vidInputOpts);
       }
@@ -237,7 +220,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         console.log(`[FFmpeg] Stream ${streamId} started.`);
         hasStarted = true;
         activeStreams.set(streamId, { 
-            command, userId, playlistPath: currentPlaylistPath, activeInputStream, 
+            command, userId, playlistPath: currentPlaylistPath, 
             startTime: Date.now(), platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
             name: title || `Stream ${streamId.substr(0,4)}`
         });
@@ -300,7 +283,6 @@ const cleanupStream = (streamId) => {
 const stopStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (stream) {
-    if (stream.activeInputStream) try { stream.activeInputStream.destroy(); } catch(e) {}
     try { stream.command.kill('SIGKILL'); } catch (e) {}
     cleanupStream(streamId);
     return true;
