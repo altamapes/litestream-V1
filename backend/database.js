@@ -33,7 +33,7 @@ const ensureColumn = async (tableName, columnName, columnDef) => {
         const columns = await dbAll(`PRAGMA table_info(${tableName})`);
         const exists = columns.some(c => c.name === columnName);
         if (!exists) {
-            console.log(`Adding column ${columnName} to ${tableName}...`);
+            console.log(`[MIGRATION] Adding column '${columnName}' to '${tableName}'...`);
             await dbRun(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
         }
     } catch (e) {
@@ -58,8 +58,7 @@ const initDB = async () => {
             limit_type TEXT DEFAULT 'daily'
         )`);
 
-        // Migrasi Kolom Plans
-        // Kita lakukan sequential await untuk menghindari lock
+        // Migrasi Kolom Plans (FIX SQLITE_ERROR)
         await ensureColumn('plans', 'price_text', 'TEXT');
         await ensureColumn('plans', 'features_text', 'TEXT');
         await ensureColumn('plans', 'daily_limit_hours', 'INTEGER DEFAULT 24');
@@ -108,7 +107,6 @@ const initDB = async () => {
         ];
         
         for (const p of plans) {
-            // Cek dulu apakah plan sudah ada
             const exist = await dbGet("SELECT id FROM plans WHERE id = ?", [p[0]]);
             if (!exist) {
                 await dbRun(`INSERT INTO plans (id, name, max_storage_mb, allowed_types, max_active_streams, price_text, features_text, daily_limit_hours, limit_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, p);
