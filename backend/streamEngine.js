@@ -61,33 +61,35 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         console.log(`[Stream ${streamId}] Mode: HYBRID (Visual: MP4, Audio: MP3 Playlist)`);
         
         // Input 0: VIDEO SOURCE (MP4)
-        // Kita loop videonya (-stream_loop -1) agar jika lagu lebih panjang dari video, visual tidak mati.
-        // Kita gunakan video pertama yang dipilih sebagai visual utama.
+        // Loop video secara visual (-stream_loop -1)
         command.input(videoFiles[0]).inputOptions([
             '-stream_loop -1', 
             '-re'
         ]);
 
         // Input 1: AUDIO SOURCE (MP3 Playlist)
-        // Kita buat playlist untuk file-file MP3
         const uniqueId = streamId;
         currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
-        const safeAudioFiles = mp3Files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
-        let playlistContent = safeAudioFiles.join('\n');
         
-        if (loop) {
-            // Jika mode loop aktif, duplikasi playlist mp3
-            const oneSet = '\n' + playlistContent;
-            for(let i=0; i<50; i++) playlistContent += oneSet;
-        }
+        // Kita tidak perlu menduplikasi isi text file berulang kali.
+        // Cukup list file sekali, dan biarkan FFmpeg yang meloop input ini.
+        const safeAudioFiles = mp3Files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
+        const playlistContent = safeAudioFiles.join('\n');
+        
         fs.writeFileSync(currentPlaylistPath, playlistContent);
         
-        command.input(currentPlaylistPath).inputOptions(['-f concat', '-safe 0', '-re']);
+        // Setup opsi input audio
+        const audioInputOptions = ['-f concat', '-safe 0', '-re'];
+        
+        // FIX: Tambahkan -stream_loop -1 JIKA user meminta loop.
+        // Ini akan membuat playlist audio diputar ulang terus menerus dari awal setelah lagu terakhir habis.
+        if (loop) {
+            audioInputOptions.unshift('-stream_loop -1'); 
+        }
+
+        command.input(currentPlaylistPath).inputOptions(audioInputOptions);
 
         // COMPLEX FILTER: Gabungkan Visual (0) dan Audio (1)
-        // 0:v -> Video dari input pertama
-        // 1:a -> Audio dari input kedua (playlist mp3)
-        // Kita abaikan audio dari video asli (0:a)
         command.complexFilter([
             // Video Processing (Input 0)
             { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
@@ -175,12 +177,19 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
           let playlistContent = safeFiles.join('\n');
-          if (loop && files.length > 1) {
-             const oneSet = '\n' + playlistContent;
-             for(let i=0; i<100; i++) playlistContent += oneSet;
+          // Untuk mode video only, kita pakai loop manual concat jika multiple files
+          // Tapi jika loop, kita gunakan opsi concat loop juga
+          if (loop) {
+             // Opsi A: Duplicate content (Old way - reliable for strict concat)
+             // Opsi B: Use stream_loop -1 on concat input (Better)
+             // Kita ubah ke Opsi B agar konsisten
           }
           fs.writeFileSync(currentPlaylistPath, playlistContent);
-          command.input(currentPlaylistPath).inputOptions(['-f concat', '-safe 0', '-re']);
+          
+          const vidInputOpts = ['-f concat', '-safe 0', '-re'];
+          if (loop) vidInputOpts.unshift('-stream_loop -1');
+          
+          command.input(currentPlaylistPath).inputOptions(vidInputOpts);
       }
 
       // Input #1: Silence (Sebagai cadangan jika audio gagal decode)
