@@ -657,7 +657,13 @@
                 const res = await fetch('/api/playlist/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ids: Array.from(modalSelectedMedia), rtmpUrl, loop: loopVal, title: titleVal, description: descVal }) });
                 const d = await res.json();
                 if (d.error) showToast(d.error, 'error'); 
-                else { showToast(d.message); closeNewStreamModal(); switchTab('overview'); }
+                else { 
+                    showToast(d.message); 
+                    closeNewStreamModal(); 
+                    switchTab('overview');
+                    // Add explicit fetch here for instant feedback for the user who started it
+                    fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s));
+                }
             } catch (e) { showToast('Error starting stream', 'error'); }
         }
 
@@ -897,6 +903,9 @@
         });
         
         socket.on('stream_ended', () => fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s)));
+        
+        // Listen for stream_started to auto-refresh the UI
+        socket.on('stream_started', () => fetch('/api/stream/status').then(r=>r.json()).then(s=>updateStreamUI(s)));
 
         async function handleLogout() { await fetch('/api/logout', {method:'POST'}); location.reload(); }
         function showAuth(m) { isLoginMode = m==='login'; toggleAuthMode(true); document.getElementById('login-view').classList.remove('hidden'); }

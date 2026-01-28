@@ -185,7 +185,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream ${streamId} started`);
-        console.log(`[FFmpeg Cmd] ${commandLine}`); // Added logging for debug
+        console.log(`[FFmpeg Cmd] ${commandLine}`); 
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
@@ -198,7 +198,11 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             description: description || ''
         });
         
-        if (global.io) global.io.emit('log', { type: 'start', message: `Stream ${streamId} Started.`, streamId });
+        if (global.io) {
+            global.io.emit('log', { type: 'start', message: `Stream ${streamId} Started.`, streamId });
+            // NEW: Emit event specifically to tell frontend to refresh the list
+            global.io.emit('stream_started', { streamId });
+        }
         resolve(streamId);
       })
       .on('progress', (progress) => {
