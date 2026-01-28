@@ -2,7 +2,6 @@
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
-const { PassThrough } = require('stream');
 const { exec } = require('child_process');
 const { db } = require('./database');
 
@@ -35,73 +34,13 @@ const checkFileHasAudio = (filePath) => {
     });
 };
 
-// Helper: Generate Playlist Content (Used for Video Only Mode)
+// Helper: Generate Playlist Content (Used for Both Video and Audio now)
 const createPlaylistFile = (files, outputPath) => {
+    // Format Concat Demuxer: file '/path/to/file'
     const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
     const content = safeFiles.join('\n');
     fs.writeFileSync(outputPath, content);
     return outputPath;
-};
-
-// ============================================================================
-// THE MAGIC SAUCE: NODE.JS INFINITE AUDIO PIPE
-// Mengalirkan data MP3 secara terus menerus ke FFmpeg tanpa henti.
-// Bagi FFmpeg, ini adalah satu file audio yang sangat panjang (infinite).
-// ============================================================================
-const createInfiniteAudioStream = (files, loop) => {
-    const outStream = new PassThrough();
-    let currentIdx = 0;
-    let isActive = true;
-    let currentReadStream = null;
-
-    const streamNext = () => {
-        if (!isActive) return;
-        
-        if (currentIdx >= files.length) {
-            if (!loop) {
-                outStream.end(); // Stop if no loop requested
-                return;
-            }
-            currentIdx = 0; // Loop back to start
-        }
-
-        const filePath = files[currentIdx];
-        if (!fs.existsSync(filePath)) {
-            currentIdx++;
-            streamNext();
-            return;
-        }
-
-        // Create stream for current file
-        currentReadStream = fs.createReadStream(filePath);
-        
-        // Pipe to output, but DO NOT close output when this file ends ({ end: false })
-        currentReadStream.pipe(outStream, { end: false });
-
-        currentReadStream.on('end', () => {
-            currentIdx++;
-            streamNext(); // Play next file immediately
-        });
-        
-        currentReadStream.on('error', (err) => {
-            console.error(`Error reading ${filePath}:`, err);
-            currentIdx++;
-            streamNext();
-        });
-    };
-
-    // Start the loop
-    streamNext();
-    
-    // Method to kill the loop externally
-    outStream.kill = () => {
-        isActive = false;
-        if (currentReadStream) currentReadStream.destroy();
-        outStream.end(); 
-        outStream.destroy();
-    };
-    
-    return outStream;
 };
 
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
@@ -117,143 +56,122 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
   return new Promise(async (resolve, reject) => {
     let command = ffmpeg();
     let lastProcessedSecond = 0;
-    let currentPlaylistPath = null;
-    let audioStreamNode = null; // Reference to our Node.js Pipe
+    let createdFiles = []; // Track temp files to delete later
     let hasStarted = false;
 
+    console.log(`[Stream ${streamId}] Preparing... Video: ${videoFiles.length}, Audio: ${mp3Files.length}`);
+
     // =========================================================
-    // MODE 3: HYBRID (VIDEO CLIP + MP3 AUDIO)
-    // Solusi: Video Loop via FFmpeg (Master), Audio Loop via Node Pipe (Slave)
+    // STRATEGY: CONCAT DEMUXER (The Standard Way)
+    // Kita buat file .txt playlist untuk audio agar FFmpeg membacanya sebagai 1 list yang bisa di-loop.
     // =========================================================
-    if (videoFiles.length > 0 && mp3Files.length > 0) {
-        console.log(`[Stream ${streamId}] Mode: HYBRID (Visual: MP4, Audio: Node Pipe)`);
-        
-        // --- INPUT 0: VISUAL (VIDEO) ---
-        // Video menggunakan -re (Realtime) sebagai master clock.
-        // Kita loop video ini agar visual tidak pernah habis.
-        command.input(videoFiles[0]).inputOptions([
-            '-stream_loop', '-1',
-            '-re' 
+
+    // 1. SETUP VIDEO INPUT (MASTER CLOCK)
+    // Input ini MENGGUNAKAN -re (Realtime) agar stream berjalan sesuai waktu dunia nyata.
+    
+    if (videoFiles.length > 0) {
+        // --- KASUS: ADA FILE VIDEO (MP4) ---
+        if (videoFiles.length === 1 && loop) {
+            // Single Video Loop
+            command.input(videoFiles[0]).inputOptions([
+                '-re',              // Read input at native frame rate (Master Clock)
+                '-stream_loop', '-1' // Loop infinite
+            ]);
+        } else {
+            // Multiple Videos (Playlist)
+            const vidListPath = path.join(__dirname, 'uploads', `vlist_${streamId}.txt`);
+            createPlaylistFile(videoFiles, vidListPath);
+            createdFiles.push(vidListPath);
+            
+            const inputOpts = ['-f', 'concat', '-safe', '0', '-re'];
+            if (loop) inputOpts.unshift('-stream_loop', '-1');
+            
+            command.input(vidListPath).inputOptions(inputOpts);
+        }
+    } else {
+        // --- KASUS: GAMBAR DIAM (AUDIO ONLY) ---
+        // Kita gunakan gambar sebagai video stream
+        let imageInput = coverImagePath;
+        if (!imageInput || !fs.existsSync(imageInput)) {
+             // Fallback: Generate black video if no image
+             command.input('color=c=black:s=1280x720:r=30').inputFormat('lavfi').inputOptions(['-re']);
+        } else {
+             // Loop Image Forever
+             command.input(imageInput).inputOptions([
+                 '-loop', '1',      // Loop image stream
+                 '-re',             // Realtime reading
+                 '-framerate', '30' // Force 30fps
+             ]);
+        }
+    }
+
+    // 2. SETUP AUDIO INPUT (SLAVE)
+    // PENTING: JANGAN gunakan -re di sini. 
+    // Biarkan audio ditarik secepat mungkin mengikuti kebutuhan Video Master Clock.
+    
+    if (mp3Files.length > 0) {
+        // Buat playlist audio selalu, meskipun cuma 1 file.
+        // Ini lebih stabil daripada input file langsung untuk looping.
+        const audioListPath = path.join(__dirname, 'uploads', `alist_${streamId}.txt`);
+        createPlaylistFile(mp3Files, audioListPath);
+        createdFiles.push(audioListPath);
+
+        command.input(audioListPath).inputOptions([
+            '-f', 'concat',      // Gunakan demuxer concat
+            '-safe', '0',        // Izinkan path absolut
+            '-stream_loop', '-1' // Loop playlist audio ini selamanya
         ]);
 
-        // --- INPUT 1: AUDIO (MP3) ---
-        // Menggunakan Node.js Pipe. FFmpeg menerima ini sebagai stream audio 'live' tak terbatas.
-        // Tidak perlu flag loop atau re disini, karena data dikirim oleh Node.js.
-        audioStreamNode = createInfiniteAudioStream(mp3Files, loop);
-        command.input(audioStreamNode).inputFormat('mp3');
-
-        // COMPLEX FILTER
+        // Mapping Complex Filter
+        // Kita pastikan audio di-resample agar sinkron jika ada drift waktu
         command.complexFilter([
-            // Video Processing (Input 0)
+            // Video: Scale to 720p standard
             { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
-            { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
-            { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
-            { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' },
+            { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'v_out' },
             
-            // Audio Processing (Input 1)
+            // Audio: Async Resample (KUNCI ANTI-PUTUS)
+            // 'async=1' mengisi gap timestamp audio jika terjadi lag saat looping
             { filter: 'aresample', options: '44100:async=1', inputs: '1:a', outputs: 'resampled' },
             { filter: 'aformat', options: 'sample_fmts=fltp:channel_layouts=stereo', inputs: 'resampled', outputs: 'a_out' }
         ]);
+
+        command.outputOptions(['-map [v_out]', '-map [a_out]']);
+
+    } else {
+        // --- KASUS: VIDEO ONLY (TANPA AUDIO EXTERNAL) ---
+        // Cek apakah video punya audio bawaan
         
-        // Perbesar buffer agar tidak putus saat transisi lagu
-        command.addOption('-max_muxing_queue_size', '9999');
+        const filters = [
+             { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
+             { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'v_out' }
+        ];
+        
+        // Kita tidak tahu pasti video punya audio atau tidak tanpa probe detail tiap file.
+        // Asumsi: Jika user tidak upload mp3, kita gunakan audio dari video (0:a) jika ada, atau silent.
+        // Agar aman, kita map 0:v dan 0:a. Jika 0:a tidak ada, ffmpeg biasanya fail.
+        // Solusi aman: Generate silent audio backup.
+        
+        // Kita tambahkan input dummy silence
+        command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi');
+        
+        // Coba gunakan audio dari video (input 0), jika gagal fallback ke silence (input 1)
+        // Note: Logic complex filter "amix" bisa menggabungkan keduanya.
+        
+        // Simplifikasi: Map video saja, biarkan FFmpeg handle audio mapping otomatis dari input 0.
+        // Jika butuh explicit filter:
+        command.complexFilter(filters);
+        command.outputOptions(['-map [v_out]', '-map 0:a?']); // ? artinya map jika ada streamnya
     }
 
-    // =========================================================
-    // MODE 1: AUDIO ONLY (IMAGE + MP3)
-    // Solusi: Image Loop via FFmpeg (Master), Audio Loop via Node Pipe (Slave)
-    // =========================================================
-    else if (videoFiles.length === 0 && mp3Files.length > 0) {
-        console.log(`[Stream ${streamId}] Mode: AUDIO ONLY (Image + Node Pipe)`);
-
-        // --- INPUT 0: COVER IMAGE ---
-        if (!coverImagePath || !fs.existsSync(coverImagePath)) {
-            command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f', 'lavfi', '-re']);
-        } else {
-            // Gambar di-loop infinite oleh FFmpeg, menjadi patokan waktu stream (-re)
-            command.input(coverImagePath).inputOptions(['-loop', '1', '-framerate', '25', '-re']); 
-        }
-
-        // --- INPUT 1: AUDIO ---
-        // Menggunakan Node.js Pipe.
-        audioStreamNode = createInfiniteAudioStream(mp3Files, loop);
-        command.input(audioStreamNode).inputFormat('mp3');
-      
-        command.complexFilter([
-            // Video (Image) Processing
-            { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
-            { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
-            { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
-            
-            // Audio Processing
-            { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' },
-            { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
-        ]);
-    } 
-
-    // =========================================================
-    // MODE 2: VIDEO ONLY (MP4 Original)
-    // Tetap menggunakan metode Playlist Concat karena Video Container (MP4)
-    // lebih kompleks strukturnya daripada MP3, lebih aman pakai concat demuxer.
-    // =========================================================
-    else {
-      let hasFileAudio = false;
-      try {
-          hasFileAudio = await checkFileHasAudio(files[0]);
-          console.log(`[Stream ${streamId}] Audio Detected: ${hasFileAudio}`);
-      } catch(e) {}
-
-      if (files.length === 1 && loop) {
-          command.input(files[0]).inputOptions([
-              '-re', 
-              '-stream_loop', '-1', 
-              '-fflags', '+genpts',
-              '-map_metadata', '-1' 
-          ]);
-      } else {
-          const uniqueId = streamId;
-          currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
-          createPlaylistFile(files, currentPlaylistPath);
-          
-          const vidInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
-          if (loop) vidInputOpts.unshift('-stream_loop', '-1');
-          
-          command.input(currentPlaylistPath).inputOptions(vidInputOpts);
-      }
-
-      // Input #1: Silence (Backup)
-      command.input('anullsrc=channel_layout=stereo:sample_rate=44100')
-             .inputFormat('lavfi');
-
-      const filters = [
-          { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
-          { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
-          { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
-          { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' }
-      ];
-
-      if (hasFileAudio) {
-          filters.push({ filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' });
-          filters.push({ filter: 'aformat', options: 'sample_fmts=fltp:channel_layouts=stereo', inputs: 'resampled', outputs: 'formatted' });
-          filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'formatted', outputs: 'a_out' });
-      } else {
-          filters.push({ filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' });
-          filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
-      }
-
-      command.complexFilter(filters);
-      command.addOption('-max_muxing_queue_size', '4096');
-    }
-
-    // --- Output Options (Common) ---
+    // --- Output Options (Optimized for Stability) ---
     command.outputOptions([
-        '-map [v_out]', '-map [a_out]',
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency',
         '-r 30', '-g 60', 
         '-pix_fmt yuv420p',
         '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k',
-        '-nal-hrd cbr',
+        
         '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',
+        
         '-f flv', '-flvflags no_duration_filesize'
     ]);
 
@@ -261,13 +179,12 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream ${streamId} started.`);
-        console.log(`[FFmpeg] Command: ${commandLine}`);
+        // console.log(`[FFmpeg] Command: ${commandLine}`); // Uncomment for debug
         hasStarted = true;
         activeStreams.set(streamId, { 
             command, 
             userId, 
-            playlistPath: currentPlaylistPath,
-            audioStreamNode, // SIMPAN REFERENCE AGAR BISA DI-KILL
+            tempFiles: createdFiles, // Store list of files to delete
             startTime: Date.now(), 
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
             name: title || `Stream ${streamId.substr(0,4)}`
@@ -308,6 +225,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
             reject(new Error(err.message));
         } else if (!err.message.includes('SIGKILL')) {
             console.error(`[Stream Error] ${err.message}`);
+            if (global.io) global.io.emit('log', { type: 'error', message: 'Stream Error: ' + err.message, streamId });
         }
         cleanupStream(streamId);
       })
@@ -324,14 +242,11 @@ const cleanupStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (!stream) return;
   
-  // 1. Bersihkan Playlist File jika ada
-  if (stream.playlistPath && fs.existsSync(stream.playlistPath)) try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
-  
-  // 2. MATIKAN NODE.JS AUDIO PIPE LOOP JIKA ADA
-  // Ini penting agar memory tidak bocor dan loop berhenti
-  if (stream.audioStreamNode && typeof stream.audioStreamNode.kill === 'function') {
-      console.log(`[Stream ${streamId}] Killing Node Audio Pipe...`);
-      stream.audioStreamNode.kill();
+  // Bersihkan file playlist temporary
+  if (stream.tempFiles && Array.isArray(stream.tempFiles)) {
+      stream.tempFiles.forEach(f => {
+          if (fs.existsSync(f)) try { fs.unlinkSync(f); } catch (e) {}
+      });
   }
 
   activeStreams.delete(streamId);
