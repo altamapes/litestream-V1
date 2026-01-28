@@ -21,25 +21,23 @@ const killZombieProcesses = () => {
 
 // ============================================================================
 // STRATEGI PAMUNGKAS: PSEUDO-INFINITE PLAYLIST
-// Alih-alih menyuruh FFmpeg looping (yang sering error timestamp),
-// Kita tulis ulang daftar file sebanyak 500x di dalam file .txt.
-// Bagi FFmpeg, ini adalah satu daftar putar linear yang sangat panjang (Ratusan Jam).
 // ============================================================================
 const createInfinitePlaylistFile = (files, outputPath, loop) => {
-    // Escape single quotes for Concat Demuxer format
-    const safeFiles = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`);
+    // Gunakan path absolut yang sangat aman
+    const safeFiles = files.map(f => {
+        const absPath = path.isAbsolute(f) ? f : path.join(__dirname, 'uploads', path.basename(f));
+        // Escape single quotes: ' -> '\''
+        return `file '${absPath.replace(/'/g, "'\\''")}'`;
+    });
     
     let content = [];
     
-    if (loop) {
-        // Jika mode LOOP: Copy-paste daftar lagu sebanyak 500 kali.
-        // Jika total durasi lagu asli 10 menit, 500x = 5000 menit = 83 Jam Nonstop.
-        // Streaming tidak akan putus selama 3 hari lebih.
-        for (let i = 0; i < 500; i++) {
-            content = content.concat(safeFiles);
-        }
-    } else {
-        content = safeFiles;
+    // Jika loop, kita duplikasi list agar menjadi sangat panjang.
+    // Kita kurangi sedikit jumlah loop tapi pastikan stream_loop flag aktif juga.
+    const loopCount = loop ? 100 : 1; 
+    
+    for (let i = 0; i < loopCount; i++) {
+        content = content.concat(safeFiles);
     }
     
     fs.writeFileSync(outputPath, content.join('\n'));
@@ -61,49 +59,47 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let playlistPath = null;
     let hasStarted = false;
 
-    console.log(`[Stream ${streamId}] Starting Mode: INFINITE PLAYLIST (Stable)`);
+    console.log(`[Stream ${streamId}] Starting... LOOP: ${loop}`);
 
     // ---------------------------------------------------------
-    // INPUT 0: VISUAL (GAMBAR) - MASTER CLOCK
+    // INPUT 0: VISUAL (GAMBAR/VIDEO)
     // ---------------------------------------------------------
-    // Kita gunakan gambar sebagai penentu kecepatan stream (-re).
-    // FPS dinaikkan ke 24 agar YouTube tidak menganggap stream 'macet'.
-    
     if (coverImagePath && fs.existsSync(coverImagePath)) {
         if (coverImagePath.endsWith('.mp4')) {
-             // Jika Video
              command.input(coverImagePath).inputOptions([
                  '-stream_loop', '-1', // Loop video background
                  '-re'                 // Realtime reading
              ]);
         } else {
-             // Jika Gambar (JPG/PNG)
              command.input(coverImagePath).inputOptions([
                  '-loop', '1',       // Loop gambar selamanya
                  '-re',              // Realtime Reading (PENTING)
-                 '-framerate', '24'  // 24 FPS (Standar Cinema/YouTube minimal sehat)
+                 '-framerate', '25'  // 25 FPS (Standard PAL, lebih aman)
              ]);
         }
     } else {
-        // Fallback Layar Hitam
-        command.input('color=c=black:s=1280x720:r=24').inputFormat('lavfi').inputOptions(['-re']);
+        command.input('color=c=black:s=1280x720:r=25').inputFormat('lavfi').inputOptions(['-re']);
     }
 
     // ---------------------------------------------------------
-    // INPUT 1: AUDIO (PLAYLIST PANJANG)
+    // INPUT 1: AUDIO (PLAYLIST)
     // ---------------------------------------------------------
-    
     if (mp3Files.length > 0) {
-        // Buat file playlist "palsu" yang sangat panjang
         playlistPath = path.join(__dirname, 'uploads', `playlist_${streamId}.txt`);
         createInfinitePlaylistFile(mp3Files, playlistPath, loop);
 
-        command.input(playlistPath).inputOptions([
-            '-f', 'concat',      // Gunakan fitur concat demuxer
-            '-safe', '0',        // Izinkan path file bebas
-            // PENTING: JANGAN PAKAI -stream_loop DISINI.
-            // Biarkan FFmpeg membaca file playlist yang panjang itu secara linear.
-        ]);
+        // Opsi Input Audio
+        const audioInputOptions = [
+            '-f', 'concat',
+            '-safe', '0'
+        ];
+
+        // FORCE LOOP FLAG pada demuxer level juga
+        if (loop) {
+            audioInputOptions.unshift('-stream_loop', '-1'); 
+        }
+
+        command.input(playlistPath).inputOptions(audioInputOptions);
     } else {
         command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi');
     }
@@ -113,13 +109,12 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     // ---------------------------------------------------------
     
     const filters = [
-        // Video: Scale ke 720p, pastikan format pixel yuv420p (YouTube requirement)
+        // Video
         { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
         { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
         { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
 
-        // Audio: Resample standar 44.1kHz.
-        // Karena input kita adalah playlist linear, kita tidak butuh filter timestamp yang rumit.
+        // Audio
         { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'a_out' }
     ];
 
@@ -131,22 +126,19 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command.outputOptions([
         '-map [v_out]', '-map [a_out]',
         
-        // Video Encoding
         '-c:v libx264', 
-        '-preset ultrafast', // CPU Usage paling rendah
-        '-tune zerolatency', // Streaming latency rendah
-        '-g 48',             // Keyframe tiap 2 detik (24fps * 2) - YouTube Wajib
-        '-b:v 1500k',        // Bitrate visual stabil
+        '-preset ultrafast', 
+        '-tune zerolatency',
+        '-g 50',             // Keyframe per 2 detik (25fps * 2)
+        '-b:v 1500k',        
         '-maxrate 2000k',
-        '-bufsize 4000k',    // Buffer size cukup besar untuk menahan fluktuasi
+        '-bufsize 4000k', 
 
-        // Audio Encoding
         '-c:a aac', 
         '-b:a 128k', 
         '-ar 44100',
         '-ac 2',
 
-        // Protocol
         '-f flv',
         '-flvflags no_duration_filesize'
     ]);
@@ -157,12 +149,13 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream Started: ${streamId}`);
+        // console.log("Command:", commandLine); // Debugging
         hasStarted = true;
         
         activeStreams.set(streamId, { 
             command, 
             userId, 
-            playlistPath, // Simpan path untuk dihapus nanti
+            playlistPath, 
             startTime: Date.now(), 
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
             name: title || `Radio ${streamId.substr(0,4)}`
@@ -213,7 +206,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         cleanupStream(streamId);
       });
 
-    // Start Streaming
     command.save(rtmpUrl);
   });
 };
@@ -222,7 +214,6 @@ const cleanupStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (!stream) return;
   
-  // Hapus file playlist temp
   if (stream.playlistPath && fs.existsSync(stream.playlistPath)) {
       try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
   }
