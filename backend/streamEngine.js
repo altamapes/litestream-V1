@@ -20,22 +20,21 @@ const killZombieProcesses = () => {
 }
 
 // ============================================================================
-// STRATEGI BARU: PSEUDO-INFINITE PLAYLIST
-// Alih-alih flag '-stream_loop -1' (yang sering error timestamp),
+// STRATEGI PAMUNGKAS: PSEUDO-INFINITE PLAYLIST
+// Alih-alih menyuruh FFmpeg looping (yang sering error timestamp),
 // Kita tulis ulang daftar file sebanyak 500x di dalam file .txt.
-// Bagi FFmpeg, ini adalah satu daftar putar linear yang sangat panjang.
+// Bagi FFmpeg, ini adalah satu daftar putar linear yang sangat panjang (Ratusan Jam).
 // ============================================================================
 const createInfinitePlaylistFile = (files, outputPath, loop) => {
-    // Bersihkan path file agar aman
+    // Escape single quotes for Concat Demuxer format
     const safeFiles = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`);
     
     let content = [];
     
     if (loop) {
-        // Jika mode LOOP: Ulangi daftar lagu sebanyak 500 kali
-        // Jika 1 album (10 lagu @ 3 menit) = 30 menit.
-        // 500 kali = 15.000 menit = 250 Jam (10 Hari nonstop).
-        // Cukup 'Infinite' untuk praktisnya.
+        // Jika mode LOOP: Copy-paste daftar lagu sebanyak 500 kali.
+        // Jika total durasi lagu asli 10 menit, 500x = 5000 menit = 83 Jam Nonstop.
+        // Streaming tidak akan putus selama 3 hari lebih.
         for (let i = 0; i < 500; i++) {
             content = content.concat(safeFiles);
         }
@@ -62,66 +61,65 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let playlistPath = null;
     let hasStarted = false;
 
-    console.log(`[Stream ${streamId}] Starting Mode: PSEUDO-INFINITE (Brute Force Loop)`);
+    console.log(`[Stream ${streamId}] Starting Mode: INFINITE PLAYLIST (Stable)`);
 
     // ---------------------------------------------------------
-    // INPUT 0: VISUAL (GAMBAR/VIDEO) - MASTER CLOCK
+    // INPUT 0: VISUAL (GAMBAR) - MASTER CLOCK
     // ---------------------------------------------------------
-    // Kita gunakan '-re' (Realtime) HANYA pada input visual.
-    // Ini menjadi 'jantung' detak waktu stream.
+    // Kita gunakan gambar sebagai penentu kecepatan stream (-re).
+    // FPS dinaikkan ke 24 agar YouTube tidak menganggap stream 'macet'.
     
     if (coverImagePath && fs.existsSync(coverImagePath)) {
         if (coverImagePath.endsWith('.mp4')) {
              // Jika Video
              command.input(coverImagePath).inputOptions([
-                 '-stream_loop', '-1', // Loop video
-                 '-re'                 // Realtime limit
+                 '-stream_loop', '-1', // Loop video background
+                 '-re'                 // Realtime reading
              ]);
         } else {
              // Jika Gambar (JPG/PNG)
              command.input(coverImagePath).inputOptions([
                  '-loop', '1',       // Loop gambar selamanya
-                 '-re',              // Realtime limit (PENTING)
-                 '-framerate', '25'  // FPS Standard YouTube (Jangan terlalu rendah)
+                 '-re',              // Realtime Reading (PENTING)
+                 '-framerate', '24'  // 24 FPS (Standar Cinema/YouTube minimal sehat)
              ]);
         }
     } else {
         // Fallback Layar Hitam
-        command.input('color=c=black:s=1280x720:r=25').inputFormat('lavfi').inputOptions(['-re']);
+        command.input('color=c=black:s=1280x720:r=24').inputFormat('lavfi').inputOptions(['-re']);
     }
 
     // ---------------------------------------------------------
-    // INPUT 1: AUDIO (PSEUDO-INFINITE LIST)
+    // INPUT 1: AUDIO (PLAYLIST PANJANG)
     // ---------------------------------------------------------
-    // Kita gunakan concat demuxer biasa, tapi filenya sudah berisi perulangan 500x.
-    // JANGAN GUNAKAN '-stream_loop' disini agar timestamp linear & mulus.
     
     if (mp3Files.length > 0) {
+        // Buat file playlist "palsu" yang sangat panjang
         playlistPath = path.join(__dirname, 'uploads', `playlist_${streamId}.txt`);
         createInfinitePlaylistFile(mp3Files, playlistPath, loop);
 
         command.input(playlistPath).inputOptions([
-            '-f', 'concat',      // Protokol Concat
-            '-safe', '0'         // Izinkan path absolut
-            // HAPUS '-stream_loop -1' (Kita sudah loop manual di text file)
+            '-f', 'concat',      // Gunakan fitur concat demuxer
+            '-safe', '0',        // Izinkan path file bebas
+            // PENTING: JANGAN PAKAI -stream_loop DISINI.
+            // Biarkan FFmpeg membaca file playlist yang panjang itu secara linear.
         ]);
     } else {
         command.input('anullsrc=channel_layout=stereo:sample_rate=44100').inputFormat('lavfi');
     }
 
     // ---------------------------------------------------------
-    // FILTERS
+    // FILTERS & MAPPING
     // ---------------------------------------------------------
-    // Tidak perlu 'asetpts' rumit karena input concat sudah linear.
-    // Cukup pastikan format visual dan sample rate audio benar.
     
     const filters = [
-        // Visual: Scale 720p, format YUV420P (Wajib YouTube)
+        // Video: Scale ke 720p, pastikan format pixel yuv420p (YouTube requirement)
         { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
         { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
         { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
 
-        // Audio: Resample ke 44.1kHz standar
+        // Audio: Resample standar 44.1kHz.
+        // Karena input kita adalah playlist linear, kita tidak butuh filter timestamp yang rumit.
         { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'a_out' }
     ];
 
@@ -133,23 +131,22 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     command.outputOptions([
         '-map [v_out]', '-map [a_out]',
         
-        // Video Codec (H.264)
+        // Video Encoding
         '-c:v libx264', 
-        '-preset ultrafast', // Hemat CPU VPS
-        '-tune zerolatency', // Streaming Mode
-        '-g 50',             // Keyframe tiap 2 detik (25fps * 2) - YouTube Suka ini
-        '-b:v 2000k',        // Bitrate Video (Cukup tajam, tidak terlalu berat)
-        '-maxrate 2500k',
-        '-bufsize 5000k',    // Buffer cukup besar untuk menahan fluktuasi
+        '-preset ultrafast', // CPU Usage paling rendah
+        '-tune zerolatency', // Streaming latency rendah
+        '-g 48',             // Keyframe tiap 2 detik (24fps * 2) - YouTube Wajib
+        '-b:v 1500k',        // Bitrate visual stabil
+        '-maxrate 2000k',
+        '-bufsize 4000k',    // Buffer size cukup besar untuk menahan fluktuasi
 
-        // Audio Codec (AAC)
+        // Audio Encoding
         '-c:a aac', 
         '-b:a 128k', 
         '-ar 44100',
         '-ac 2',
 
-        // System Tuning
-        '-max_muxing_queue_size 9999', // Mencegah error 'Too many packets' saat loading playlist
+        // Protocol
         '-f flv',
         '-flvflags no_duration_filesize'
     ]);
@@ -165,7 +162,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         activeStreams.set(streamId, { 
             command, 
             userId, 
-            playlistPath, 
+            playlistPath, // Simpan path untuk dihapus nanti
             startTime: Date.now(), 
             platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
             name: title || `Radio ${streamId.substr(0,4)}`
@@ -225,6 +222,7 @@ const cleanupStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (!stream) return;
   
+  // Hapus file playlist temp
   if (stream.playlistPath && fs.existsSync(stream.playlistPath)) {
       try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
   }
