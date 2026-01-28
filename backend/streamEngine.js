@@ -1,214 +1,239 @@
+
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs');
-const { PassThrough } = require('stream');
+const { exec } = require('child_process');
 const { db } = require('./database');
 
-// Store active streams: key = streamId, value = { command, userId, playlistPath, activeInputStream, loop: boolean }
+// MARKER: PASTIKAN INI MUNCUL DI LOG
+console.log("\n==================================================");
+console.log("!!! LITESTREAM ENGINE V3 (FINAL) LOADED SUCCESS !!!");
+console.log("==================================================\n");
+
+// Store active streams
 const activeStreams = new Map();
 
+const killZombieProcesses = () => {
+    return new Promise((resolve) => {
+         console.log('[System] Cleaning up zombie FFmpeg processes...');
+         exec('pkill -f ffmpeg', (err, stdout, stderr) => {
+             activeStreams.clear();
+             console.log('[System] Clean. All streams reset.');
+             resolve();
+         });
+    });
+}
+
+// ============================================================================
+// GENERATOR PLAYLIST (Loop Logic)
+// ============================================================================
+const createInfinitePlaylistFile = (files, outputPath, loop) => {
+    // Validasi file existence
+    const validFiles = files.filter(f => {
+        const absPath = path.isAbsolute(f) ? f : path.join(__dirname, 'uploads', path.basename(f));
+        return fs.existsSync(absPath);
+    });
+
+    if (validFiles.length === 0) return false;
+
+    const safeFiles = validFiles.map(f => {
+        const absPath = path.isAbsolute(f) ? f : path.join(__dirname, 'uploads', path.basename(f));
+        // Escape single quote untuk FFmpeg concat demuxer
+        return `file '${absPath.replace(/'/g, "'\\''")}'`;
+    });
+    
+    let content = [];
+    // Jika loop, duplikasi 50x untuk membuat durasi virtual panjang
+    const loopCount = loop ? 50 : 1; 
+    
+    for (let i = 0; i < loopCount; i++) {
+        content = content.concat(safeFiles);
+    }
+    
+    fs.writeFileSync(outputPath, content.join('\n'));
+    return outputPath;
+};
+
 const startStream = (inputPaths, rtmpUrl, options = {}) => {
-  const { userId, loop = false, coverImagePath, title, description } = options;
+  const { userId, loop = false, coverImagePath, title } = options;
   const files = Array.isArray(inputPaths) ? inputPaths : [inputPaths];
-  const isAllAudio = files.every(f => f.toLowerCase().endsWith('.mp3'));
   
-  // Generate Unique Stream ID
+  // ==================================================
+  // MODE DETECTION LOGIC (V3 - Simplified)
+  // ==================================================
+  // Cek file pertama. 
+  const firstFile = files[0] || '';
+  const firstExt = path.extname(firstFile).toLowerCase();
+  
+  // Tentukan Mode:
+  // Video Mode = File berakhiran .mp4, .mkv, .mov, .avi
+  // Radio Mode = Sisanya (terutama .mp3) ATAU jika user maksa pakai cover image
+  const isVideoFile = ['.mp4', '.mkv', '.mov', '.avi'].includes(firstExt);
+  const isRadioMode = !isVideoFile || (coverImagePath && fs.existsSync(coverImagePath));
+  
   const streamId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
   
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     let command = ffmpeg();
     let lastProcessedSecond = 0;
-    let currentPlaylistPath = null;
-    let activeInputStream = null;
+    let playlistPath = null;
     let hasStarted = false;
 
-    // --- AUDIO HANDLING ---
-    if (isAllAudio) {
-      const mixedStream = new PassThrough();
-      activeInputStream = mixedStream;
-      let fileIndex = 0;
+    console.log(`[Stream ${streamId}] Starting... Mode: ${isRadioMode ? 'RADIO (MP3)' : 'VIDEO (MP4)'}`);
 
-      const playNextSong = () => {
-        if (!activeStreams.has(streamId) && hasStarted) return; // Stop if stream removed
-        
-        if (fileIndex >= files.length) {
-            if (loop) { fileIndex = 0; } 
-            else { mixedStream.end(); return; }
-        }
-
-        const currentFile = files[fileIndex];
-        const songStream = fs.createReadStream(currentFile);
-        
-        songStream.pipe(mixedStream, { end: false });
-
-        songStream.on('end', () => {
-           fileIndex++;
-           playNextSong();
-        });
-        
-        songStream.on('error', (err) => {
-           console.error(`Error reading file ${currentFile}:`, err);
-           fileIndex++;
-           playNextSong();
-        });
-      };
-
-      playNextSong();
-
-      // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
-      const videoFilter = [
-        'scale=1280:720:force_original_aspect_ratio=decrease',
-        'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-        'noise=alls=1:allf=t+u', // Micro-noise to prevent bitrate drop
-        'format=yuv420p'
-      ].join(',');
-
-      // Input 1: Image/Color
-      if (!coverImagePath || !fs.existsSync(coverImagePath)) {
-        command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
-      } else {
-        command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 1', '-re']); 
-      }
-
-      // Input 2: Audio Stream
-      command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']); 
-
-      command.outputOptions([
-        '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
-        '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
-        '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', // 25 FPS Standard
-        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', 
-        '-bufsize 5000k', // Relaxed buffer for audio mode too
-        '-nal-hrd cbr', 
-        '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
-        '-f flv', '-flvflags no_duration_filesize'
-      ]);
-
-    } 
-    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY) ---
-    else {
-      // Standardize Video Filter: Scale to 720p, Pad to 16:9
-      const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
-      
-      // LOGIC BRANCH: Single File vs Playlist
-      if (files.length === 1) {
-          // --- SINGLE FILE MODE (More Stable) ---
-          const singleFile = files[0];
-          command.input(singleFile);
-          
-          const inputOpts = ['-re']; // Read at native frame rate
-          if (loop) inputOpts.unshift('-stream_loop', '-1');
-          command.inputOptions(inputOpts);
-
-      } else {
-          // --- PLAYLIST MODE (Using Concat Demuxer) ---
-          const uniqueId = streamId;
-          currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
-          
-          // Escape single quotes for ffmpeg concat file
-          const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
-          fs.writeFileSync(currentPlaylistPath, playlistContent);
-
-          const videoInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
-          if (loop) videoInputOpts.unshift('-stream_loop', '-1');
-
-          command.input(currentPlaylistPath).inputOptions(videoInputOpts);
-      }
-      
-      // UNIVERSAL OUTPUT OPTIONS (Transcoding)
-      // FIX: Relaxed buffers and added queue size to prevent MP4 crashes
-      command.outputOptions([
-        '-c:v libx264',
-        '-preset ultrafast', 
-        '-tune zerolatency',
-        `-vf ${videoFilter}`,
-        '-pix_fmt yuv420p',
-        '-r 30',
-        '-g 60',            // Keyframe every 2 seconds (30fps * 2)
-        '-b:v 2500k',       // Target Bitrate
-        '-minrate 2500k',   // FORCE Minimum Bitrate
-        '-maxrate 2500k',   // FORCE Maximum Bitrate
-        '-bufsize 5000k',   // BUFFER INCREASED: Prevent underflow/overflow on complex scenes
-        '-nal-hrd cbr',     // Enforce CBR compliance
-        '-max_muxing_queue_size 9999', // FIX: Prevent "Too many packets buffered" error
-        '-c:a aac',
-        '-ar 44100',
-        '-b:a 128k',
-        '-ac 2',            
-        '-af aresample=async=1', // FIX: Ensure audio sync even if sample rate differs
-        '-bsf:a aac_adtstoasc',
-        '-f flv',
-        '-flvflags no_duration_filesize'
-      ]);
+    // Buat Playlist
+    playlistPath = path.join(__dirname, 'uploads', `playlist_${streamId}.txt`);
+    const playlistCreated = createInfinitePlaylistFile(files, playlistPath, loop);
+    
+    if (!playlistCreated) {
+        return reject(new Error("File media tidak ditemukan di server!"));
     }
 
-    // --- EVENTS ---
+    // ==================================================
+    // PIPELINE CONFIGURATION
+    // ==================================================
+    
+    if (isRadioMode) {
+        // --- MODE RADIO (Visual Statis + Audio Playlist) ---
+        
+        // INPUT 0: Visual (Cover Image atau Black Screen)
+        if (coverImagePath && fs.existsSync(coverImagePath)) {
+            if (coverImagePath.endsWith('.mp4')) {
+                 command.input(coverImagePath).inputOptions(['-stream_loop', '-1', '-re']);
+            } else {
+                 command.input(coverImagePath).inputOptions(['-loop', '1', '-re', '-framerate', '25']);
+            }
+        } else {
+            // Fallback Black Screen jika MP3 tidak ada cover
+            command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f', 'lavfi', '-re']);
+        }
+
+        // INPUT 1: Playlist Audio
+        command.input(playlistPath).inputOptions([
+            '-f', 'concat',
+            '-safe', '0',
+            ...(loop ? ['-stream_loop', '-1'] : []) 
+        ]);
+
+        // FILTER V3: Strict Mapping
+        // Input 0 (Visual) -> v_out
+        // Input 1 (Audio)  -> a_out
+        command.complexFilter([
+            '[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p[v_out]',
+            '[1:a]aresample=44100,aformat=channel_layouts=stereo[a_out]'
+        ]);
+
+    } else {
+        // --- MODE VIDEO (Video Playlist) ---
+        
+        // INPUT 0: Playlist Video
+        command.input(playlistPath).inputOptions([
+            '-f', 'concat',
+            '-safe', '0',
+            '-re',
+            ...(loop ? ['-stream_loop', '-1'] : [])
+        ]);
+
+        // FILTER V3: Direct Mapping
+        // Input 0 berisi Video DAN Audio.
+        // Kita ambil Video -> v_out, Audio -> a_out
+        command.complexFilter([
+            '[0:v]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p[v_out]',
+            '[0:a]aresample=44100,aformat=channel_layouts=stereo[a_out]'
+        ]);
+    }
+
+    // ==================================================
+    // OUTPUT CONFIGURATION
+    // ==================================================
+    command.outputOptions([
+        '-map [v_out]', 
+        '-map [a_out]',
+        
+        // Video Encoding (Superfast untuk VPS)
+        '-c:v libx264', 
+        '-preset ultrafast', 
+        '-tune zerolatency',
+        '-g 60',             // Keyframe tiap 2 detik (30fps)
+        '-b:v 2500k',        
+        '-maxrate 3000k',
+        '-bufsize 6000k', 
+        '-pix_fmt yuv420p',
+
+        // Audio Encoding
+        '-c:a aac', 
+        '-b:a 128k', 
+        '-ar 44100',
+        '-ac 2',
+
+        // RTMP Output
+        '-f flv',
+        '-flvflags no_duration_filesize'
+    ]);
+
+    // ==================================================
+    // EVENTS
+    // ==================================================
     command
-      .on('start', (commandLine) => {
-        console.log(`[FFmpeg] Stream ${streamId} started`);
+      .on('start', (cmd) => {
+        console.log(`[Stream ${streamId}] FFmpeg Spawned.`);
+        // console.log("Debug CMD:", cmd); // Uncomment jika perlu debug command lengkap
         hasStarted = true;
+        
         activeStreams.set(streamId, { 
             command, 
             userId, 
-            playlistPath: currentPlaylistPath,
-            activeInputStream,
-            startTime: Date.now(),
-            platform: rtmpUrl.includes('youtube') ? 'YouTube' : (rtmpUrl.includes('facebook') ? 'Facebook' : (rtmpUrl.includes('twitch') ? 'Twitch' : 'Custom')),
-            name: title || `Stream ${streamId.substr(0,4)}`,
-            description: description || ''
+            playlistPath, 
+            startTime: Date.now(), 
+            platform: rtmpUrl.includes('youtube') ? 'YouTube' : 'Custom',
+            name: title || `Stream ${streamId.substr(0,4)}`
         });
-        
-        if (global.io) global.io.emit('log', { type: 'start', message: `Stream ${streamId} Started.`, streamId });
+
+        if (global.io) {
+            global.io.emit('stream_started', { streamId });
+        }
         resolve(streamId);
       })
       .on('progress', (progress) => {
+        // Tracker Durasi
         const currentTimemark = progress.timemark; 
-        const parts = currentTimemark.split(':');
-        const totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
+        let totalSeconds = 0;
+        if(currentTimemark) {
+            const parts = currentTimemark.split(':');
+            if(parts.length === 3) totalSeconds = (+parts[0]) * 3600 + (+parts[1]) * 60 + (+parseFloat(parts[2]));
+        }
+        
         const diff = Math.floor(totalSeconds - lastProcessedSecond);
-
         if (diff >= 5) { 
             lastProcessedSecond = totalSeconds;
-            
-            db.get(`SELECT u.usage_seconds, p.daily_limit_hours FROM users u JOIN plans p ON u.plan_id = p.id WHERE u.id = ?`, [userId], (err, row) => {
+            db.get(`SELECT u.usage_seconds FROM users u WHERE u.id = ?`, [userId], (err, row) => {
                 if (row) {
                     const newUsage = row.usage_seconds + diff;
-                    const limitSeconds = row.daily_limit_hours * 3600;
-
                     db.run("UPDATE users SET usage_seconds = ? WHERE id = ?", [newUsage, userId]);
-
-                    if (newUsage >= limitSeconds) {
-                        if (global.io) global.io.emit('log', { type: 'error', message: 'Quota exceeded for user.', streamId });
-                        stopStream(streamId);
-                    }
-
-                    if (global.io) {
-                        global.io.emit('stats', { 
-                            streamId,
-                            duration: progress.timemark, 
-                            bitrate: progress.currentKbps ? Math.round(progress.currentKbps) + ' kbps' : 'N/A',
-                            usage_remaining: Math.max(0, limitSeconds - newUsage)
-                        });
-                    }
+                    
+                    if (global.io) global.io.emit('stats', { 
+                        streamId, 
+                        duration: progress.timemark, 
+                        bitrate: progress.currentKbps ? Math.round(progress.currentKbps) + ' kbps' : 'Stable' 
+                    });
                 }
             });
         }
       })
-      .on('error', (err, stdout, stderr) => {
+      .on('error', (err) => {
         if (!hasStarted) {
-            console.error(`[FFmpeg Error Start] ${err.message}`);
-            if (stderr) console.error(`[FFmpeg Stderr] ${stderr}`);
-            reject(new Error(err.message));
-        } else {
-            if (!err.message.includes('SIGKILL')) {
-                console.error(`[FFmpeg Error Stream ${streamId}] ${err.message}`);
+            console.error(`[Start Error] ${err.message}`);
+            reject(new Error("FFmpeg Gagal Start: " + err.message));
+        } else if (!err.message.includes('SIGKILL')) {
+            console.error(`[Stream Error] ${err.message}`);
+            if (err.message.includes('Output with label')) {
+                 console.error(">>> ERROR FILTER GRAPH: Cek input file Anda. Pastikan Video memiliki Audio track.");
             }
         }
         cleanupStream(streamId);
       })
       .on('end', () => {
-        console.log(`[FFmpeg] Stream ${streamId} ended cleanly.`);
-        if (global.io) global.io.emit('log', { type: 'end', message: `Stream ${streamId} Ended.`, streamId });
+        console.log(`[Stream ${streamId}] Ended.`);
         cleanupStream(streamId);
       });
 
@@ -219,11 +244,11 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 const cleanupStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (!stream) return;
-
-  if (stream.playlistPath && fs.existsSync(stream.playlistPath)) {
-    try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
-  }
   
+  if (stream.playlistPath && fs.existsSync(stream.playlistPath)) {
+      try { fs.unlinkSync(stream.playlistPath); } catch (e) {}
+  }
+
   activeStreams.delete(streamId);
   if (global.io) global.io.emit('stream_ended', { streamId });
 };
@@ -231,11 +256,9 @@ const cleanupStream = (streamId) => {
 const stopStream = (streamId) => {
   const stream = activeStreams.get(streamId);
   if (stream) {
-    console.log(`[Stream] Stopping ${streamId}...`);
-    if (stream.activeInputStream) {
-        try { stream.activeInputStream.end(); } catch(e) {}
-    }
-    try { stream.command.kill('SIGKILL'); } catch (e) {}
+    try { 
+        stream.command.kill('SIGKILL'); 
+    } catch (e) {}
     cleanupStream(streamId);
     return true;
   }
@@ -244,19 +267,10 @@ const stopStream = (streamId) => {
 
 const getActiveStreams = (userId) => {
     const list = [];
-    activeStreams.forEach((v, k) => {
-        if (v.userId === userId) {
-            list.push({ 
-                id: k, 
-                platform: v.platform, 
-                startTime: v.startTime,
-                name: v.name
-            });
-        }
+    activeStreams.forEach((v, k) => { 
+        if (v.userId === userId) list.push({ id: k, platform: v.platform, startTime: v.startTime, name: v.name }); 
     });
     return list;
 };
 
-const isStreaming = () => activeStreams.size > 0;
-
-module.exports = { startStream, stopStream, isStreaming, getActiveStreams };
+module.exports = { startStream, stopStream, getActiveStreams, killZombieProcesses };
