@@ -8,7 +8,7 @@ const { db } = require('./database');
 
 // MARKER: PASTIKAN INI MUNCUL DI LOG
 console.log("\n==================================================");
-console.log("!!! LITESTREAM ENGINE: PASSTHROUGH EDITION !!!");
+console.log("!!! LITESTREAM ENGINE: HIGH BITRATE CBR FIX !!!");
 console.log("==================================================\n");
 
 // Store active streams: key = streamId, value = { command, userId, playlistPath, activeInputStream, loop: boolean }
@@ -73,11 +73,12 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       playNextSong();
 
-      // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
+      // OPTIMIZED FOR LOW END VPS BUT FORCING BITRATE
+      // Increased noise to '5' to force encoder to generate bits
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-        'noise=alls=1:allf=t+u', // Micro-noise to prevent bitrate drop
+        'noise=alls=5:allf=t+u', 
         'format=yuv420p'
       ].join(',');
 
@@ -96,16 +97,17 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
         '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', // 25 FPS Standard
         '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', 
-        '-bufsize 5000k', // Relaxed buffer for audio mode too
-        '-nal-hrd cbr', 
+        '-bufsize 5000k',
+        // IMPORTANT: Force CBR Padding for YouTube/FB
+        '-x264-params', 'nal-hrd=cbr',
         '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
       ]);
 
     } 
-    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY) ---
+    // --- VIDEO HANDLING (FIXED FOR MP4 STABILITY & CBR) ---
     else {
-      // Standardize Video Filter: Scale to 720p, Pad to 16:9
+      // Standardize Video Filter
       const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
       
       // LOGIC BRANCH: Single File vs Playlist
@@ -134,7 +136,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       }
       
       // UNIVERSAL OUTPUT OPTIONS (Transcoding)
-      // FIX: Relaxed buffers and added queue size to prevent MP4 crashes
       command.outputOptions([
         '-c:v libx264',
         '-preset ultrafast', 
@@ -146,14 +147,14 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-b:v 2500k',       // Target Bitrate
         '-minrate 2500k',   // FORCE Minimum Bitrate
         '-maxrate 2500k',   // FORCE Maximum Bitrate
-        '-bufsize 5000k',   // BUFFER INCREASED: Prevent underflow/overflow on complex scenes
-        '-nal-hrd cbr',     // Enforce CBR compliance
-        '-max_muxing_queue_size 9999', // FIX: Prevent "Too many packets buffered" error
+        '-bufsize 5000k',   // BUFFER
+        '-x264-params', 'nal-hrd=cbr', // FORCE FILLER DATA
+        '-max_muxing_queue_size 9999', 
         '-c:a aac',
         '-ar 44100',
         '-b:a 128k',
         '-ac 2',            
-        '-af aresample=async=1', // FIX: Ensure audio sync even if sample rate differs
+        '-af aresample=async=1',
         '-bsf:a aac_adtstoasc',
         '-f flv',
         '-flvflags no_duration_filesize'
