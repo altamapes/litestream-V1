@@ -88,13 +88,15 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       playNextSong();
 
       command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']);
+      
+      // FIX: Hapus argumen kedua (mapping array) untuk mencegah error 'label does not exist'
       command.complexFilter([
           { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
           { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
           { filter: 'format', options: 'yuv420p', inputs: 'padded', outputs: 'v_out' },
           { filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' },
           { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
-      ], ['v_out', 'a_out']);
+      ]);
     } 
     // =========================================================
     // 2. VIDEO MODE (MP4) - ROBUST FIX FOR 8kbps AUDIO
@@ -112,7 +114,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
               '-re', 
               '-stream_loop -1', 
               '-fflags +genpts',
-              '-map_metadata -1' // Strip metadata to avoid loop errors
+              '-map_metadata -1' 
           ]);
       } else {
           // Playlist Logic
@@ -142,16 +144,19 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
       if (hasFileAudio) {
           // KEY FIX: async=1 handle desync dari audio 8kbps yang jelek
-          // Kita memaksa resample ke 44100Hz agar FFmpeg tidak bingung
+          // 0:a mengacu pada audio dari file input utama
           filters.push({ filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
       } else {
-          // Gunakan silence
+          // Gunakan silence dari Input #1 (1:a) jika tidak ada audio
           filters.push({ filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
       }
 
-      command.complexFilter(filters, ['v_out', 'a_out']);
+      // FIX UTAMA: Hapus argumen kedua (mapping array) di sini.
+      // Kita sudah mendefinisikan 'v_out' dan 'a_out' di dalam objek filter di atas.
+      // Menambahkan array di sini membuat fluent-ffmpeg mencoba mapping ganda yang menyebabkan error.
+      command.complexFilter(filters);
       
       // KEY FIX: Menambah ukuran queue untuk looping file dengan bitrate aneh
       command.addOption('-max_muxing_queue_size', '4096');
@@ -165,7 +170,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-pix_fmt yuv420p',
         '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k',
         '-nal-hrd cbr',
-        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2', // Force 128k audio output
+        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2', 
         '-f flv', '-flvflags no_duration_filesize'
     ]);
 
