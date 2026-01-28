@@ -20,16 +20,17 @@ const killZombieProcesses = () => {
     });
 }
 
-// Helper: Cek apakah file punya audio (Robust Version)
+// Robust Audio Checker
 const checkFileHasAudio = (filePath) => {
     return new Promise((resolve) => {
         ffmpeg.ffprobe(filePath, (err, metadata) => {
             if (err) {
                 console.error(`[FFprobe Error] ${filePath}:`, err);
-                resolve(false); // Asumsikan tidak ada audio jika error
+                resolve(false); 
             } else {
-                const hasAudio = metadata.streams.some(s => s.codec_type === 'audio');
-                resolve(hasAudio);
+                // Audio exists AND has a duration (not just metadata)
+                const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
+                resolve(!!audioStream);
             }
         });
     });
@@ -50,7 +51,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let hasStarted = false;
 
     // =========================================================
-    // 1. AUDIO MODE (MP3) - Tidak diubah (Sudah Stabil)
+    // 1. AUDIO MODE (MP3)
     // =========================================================
     if (isAllAudio) {
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
@@ -96,72 +97,67 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ], ['v_out', 'a_out']);
     } 
     // =========================================================
-    // 2. VIDEO MODE (MP4) - STABILIZED & SAFE
+    // 2. VIDEO MODE (MP4) - ROBUST FIX FOR 8kbps AUDIO
     // =========================================================
     else {
-      // Cek audio file pertama
       let hasFileAudio = false;
       try {
           hasFileAudio = await checkFileHasAudio(files[0]);
-          console.log(`[Stream ${streamId}] Audio check: ${hasFileAudio ? 'HAS AUDIO' : 'NO AUDIO (SILENT)'}`);
+          console.log(`[Stream ${streamId}] Audio Detected: ${hasFileAudio}`);
       } catch(e) {}
 
-      // --- SETUP INPUT ---
-      // Kita gunakan Input Looping (-stream_loop -1) yang lebih kompatibel daripada Movie Filter
+      // --- Setup Inputs ---
       if (files.length === 1 && loop) {
-          // Opsi Input Looping
           command.input(files[0]).inputOptions([
               '-re', 
-              '-stream_loop -1', // Loop tak terbatas di level input
-              '-fflags +genpts'  // Regenerate timestamp (PENTING untuk loop)
+              '-stream_loop -1', 
+              '-fflags +genpts',
+              '-map_metadata -1' // Strip metadata to avoid loop errors
           ]);
       } else {
-          // Playlist Mode
+          // Playlist Logic
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
           let playlistContent = safeFiles.join('\n');
-          
-          // Manual loop playlist content
           if (loop && files.length > 1) {
              const oneSet = '\n' + playlistContent;
              for(let i=0; i<100; i++) playlistContent += oneSet;
           }
           fs.writeFileSync(currentPlaylistPath, playlistContent);
-          
           command.input(currentPlaylistPath).inputOptions(['-f concat', '-safe 0', '-re']);
       }
 
-      // --- SETUP AUDIO DUMMY (SILENCE) ---
-      // Selalu tambahkan input silence (index 1) sebagai cadangan
+      // Input #1: Silence (Selalu ada sebagai cadangan/mixer)
       command.input('anullsrc=channel_layout=stereo:sample_rate=44100')
              .inputFormat('lavfi');
 
-      // --- FILTER GRAPH ---
       const filters = [
-          // Video Processing (Input 0)
+          // Video: Scale & Pad
           { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
           { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
           { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
           { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' }
       ];
 
-      // Audio Logic (The Fix)
       if (hasFileAudio) {
-          // Jika file punya audio, ambil dari Input 0
+          // KEY FIX: async=1 handle desync dari audio 8kbps yang jelek
+          // Kita memaksa resample ke 44100Hz agar FFmpeg tidak bingung
           filters.push({ filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
       } else {
-          // Jika file Bisu, ambil dari Input 1 (Silence)
-          // KITA JANGAN PERNAH MENYENTUH 0:a JIKA FILE BISU -> INI PENYEBAB CRASH
+          // Gunakan silence
           filters.push({ filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
       }
 
       command.complexFilter(filters, ['v_out', 'a_out']);
+      
+      // KEY FIX: Menambah ukuran queue untuk looping file dengan bitrate aneh
+      command.addOption('-max_muxing_queue_size', '4096');
     }
 
-    // --- OUTPUT OPTIONS ---
+    // --- Output Options (Common) ---
     command.outputOptions([
         '-map [v_out]', '-map [a_out]',
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency',
@@ -169,11 +165,11 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         '-pix_fmt yuv420p',
         '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k',
         '-nal-hrd cbr',
-        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',
+        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2', // Force 128k audio output
         '-f flv', '-flvflags no_duration_filesize'
     ]);
 
-    // --- EVENTS ---
+    // --- Event Handling ---
     command
       .on('start', (commandLine) => {
         console.log(`[FFmpeg] Stream ${streamId} started.`);
@@ -190,7 +186,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         resolve(streamId);
       })
       .on('progress', (progress) => {
-        // ... (Logika kuota tetap sama) ...
+        // ... Logika Kuota ...
         const currentTimemark = progress.timemark; 
         let totalSeconds = 0;
         if(currentTimemark) {

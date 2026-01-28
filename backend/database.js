@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const dbPath = path.join(__dirname, 'database.sqlite');
 const db = new sqlite3.Database(dbPath);
 
-// Helper untuk mengubah command SQLite menjadi Promise
+// Wrapper Promise untuk SQLite
 const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
         if (err) reject(err);
@@ -28,16 +28,17 @@ const dbGet = (sql, params = []) => new Promise((resolve, reject) => {
     });
 });
 
+// Fungsi Migrasi Kolom yang Aman
 const ensureColumn = async (tableName, columnName, columnDef) => {
     try {
         const columns = await dbAll(`PRAGMA table_info(${tableName})`);
         const exists = columns.some(c => c.name === columnName);
         if (!exists) {
-            console.log(`[MIGRATION] Adding column '${columnName}' to '${tableName}'...`);
+            console.log(`[DATABASE] Migrating: Adding ${columnName} to ${tableName}...`);
             await dbRun(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
         }
     } catch (e) {
-        console.error(`Error ensuring column ${columnName}:`, e.message);
+        console.error(`[DATABASE] Migration Error (${columnName}):`, e.message);
     }
 };
 
@@ -45,7 +46,7 @@ const initDB = async () => {
     try {
         await dbRun("PRAGMA foreign_keys = ON");
 
-        // 1. Buat Tabel Plans
+        // 1. Tabel Plans
         await dbRun(`CREATE TABLE IF NOT EXISTS plans (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             name TEXT UNIQUE, 
@@ -58,13 +59,13 @@ const initDB = async () => {
             limit_type TEXT DEFAULT 'daily'
         )`);
 
-        // Migrasi Kolom Plans (FIX SQLITE_ERROR)
+        // Force Check Kolom (Migrasi)
         await ensureColumn('plans', 'price_text', 'TEXT');
         await ensureColumn('plans', 'features_text', 'TEXT');
         await ensureColumn('plans', 'daily_limit_hours', 'INTEGER DEFAULT 24');
         await ensureColumn('plans', 'limit_type', "TEXT DEFAULT 'daily'");
 
-        // 2. Buat Tabel Users
+        // 2. Tabel Users
         await dbRun(`CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             username TEXT UNIQUE, 
@@ -98,7 +99,7 @@ const initDB = async () => {
 
         await dbRun(`CREATE TABLE IF NOT EXISTS stream_settings (key TEXT PRIMARY KEY, value TEXT)`);
 
-        // 4. Seeding Data Plans
+        // 4. Seeding Plans
         const plans = [
             [1, 'Paket Free Trial', 2048, 'video,audio', 3, 'Gratis', 'Max 720p, Total 5 Jam (Trial Habis = Stop), Multi-Stream Ready', 5, 'total'],
             [2, 'Paket Pro (Creator)', 10240, 'video,audio', 5, 'Rp 100.000', 'Max 1080p, 24 Jam Non-stop, Multi-Target', 24, 'daily'],
@@ -111,12 +112,13 @@ const initDB = async () => {
             if (!exist) {
                 await dbRun(`INSERT INTO plans (id, name, max_storage_mb, allowed_types, max_active_streams, price_text, features_text, daily_limit_hours, limit_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, p);
             } else {
+                // Update existing plans definition
                 await dbRun(`UPDATE plans SET max_active_streams = ?, daily_limit_hours = ?, limit_type = ?, features_text = ? WHERE id = ?`, 
                    [p[4], p[7], p[8], p[6], p[0]]);
             }
         }
 
-        // Seeding Settings
+        // 5. Seeding Settings
         const defaultSettings = [
             ['landing_title', 'Broadcast Anywhere <br> from <span class="text-indigo-400">Any VPS.</span>'],
             ['landing_desc', 'Server streaming paling ringan di dunia. Dirancang khusus untuk VPS 1GB RAM.'],
@@ -127,7 +129,7 @@ const initDB = async () => {
             await dbRun(`INSERT OR IGNORE INTO stream_settings (key, value) VALUES (?, ?)`, s);
         }
 
-        // Seeding Admin
+        // 6. Seeding Admin
         const adminUser = 'admin';
         const row = await dbGet("SELECT id FROM users WHERE username = ?", [adminUser]);
         if (!row) {
@@ -136,10 +138,10 @@ const initDB = async () => {
             await dbRun(`INSERT INTO users (username, password_hash, role, plan_id) VALUES (?, ?, 'admin', 4)`, [adminUser, hash]);
         }
 
-        console.log("Database initialized successfully.");
+        console.log("[DATABASE] Initialization Complete. All columns verified.");
 
     } catch (err) {
-        console.error("Database Initialization Error:", err);
+        console.error("[DATABASE] Init Fatal Error:", err);
     }
 };
 
