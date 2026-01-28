@@ -35,7 +35,9 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     let activeInputStream = null;
     let hasStarted = false;
 
-    // --- AUDIO HANDLING (STABIL: PAKE NODE PIPE) ---
+    // =========================================================
+    // 1. AUDIO MODE (MP3) - JANGAN DIUBAH (WORKING PERFECTLY)
+    // =========================================================
     if (isAllAudio) {
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
@@ -97,32 +99,65 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ]);
 
     } 
-    // --- VIDEO HANDLING (STABIL: HYBRID MODE) ---
+    // =========================================================
+    // 2. VIDEO MODE (MP4) - UPDATED TO "MOVIE FILTER" METHOD
+    // =========================================================
     else {
       
-      // KASUS 1: SINGLE FILE & LOOP (Paling Umum)
-      // Gunakan Native Loop FFmpeg tapi dengan flag +genpts untuk fix timestamp
+      // -- SKENARIO A: Single File Loop (Paling Sering Digunakan) --
+      // Kita gunakan teknik "Movie Source Filter".
+      // Ini membaca file sebagai generator tak terbatas, bukan sebagai file biasa.
       if (files.length === 1 && loop) {
-          command.input(files[0])
-                 .inputOptions([
-                     '-stream_loop', '-1', // Native Loop
-                     '-re',                // Read Realtime
-                     '-fflags', '+genpts'  // Generate PTS baru saat loop (PENTING!)
-                 ]);
+          const videoPath = path.resolve(files[0]).replace(/\\/g, '/'); // Fix path windows/linux
+          
+          // Input Dummy: FFmpeg butuh setidaknya 1 input fisik, kita kasih nullsrc (kosong)
+          // Input video sesungguhnya dimuat lewat filter di bawah.
+          command.input('anullsrc=channel_layout=stereo:sample_rate=44100')
+                 .inputFormat('lavfi')
+                 .inputOptions(['-re']); // Read realtime dari dummy source
+
+          // COMPLEX FILTER MAGIC
+          // movie=filename:loop=0 -> Baca file, loop tak terbatas (0)
+          // setpts=N/FRAME_RATE/TB -> Buat timestamp baru yang mulus (0, 1, 2, 3...)
+          command.complexFilter([
+              // 1. Video Source Generator
+              {
+                  filter: 'movie',
+                  options: { filename: videoPath, loop: 0 }, 
+                  outputs: 'raw_v'
+              },
+              // 2. Audio Source Generator
+              {
+                  filter: 'amovie',
+                  options: { filename: videoPath, loop: 0 },
+                  outputs: 'raw_a'
+              },
+              // 3. Video Processing (Scale & FPS)
+              { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: 'raw_v', outputs: 'scaled' },
+              { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
+              { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
+              { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' },
+              
+              // 4. Audio Processing (Sync)
+              { filter: 'aresample', options: '44100:async=1', inputs: 'raw_a', outputs: 'resampled' },
+              { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
+          ], ['v_out', 'a_out']);
+
       } 
-      // KASUS 2: MULTI FILE / NO LOOP
+      // -- SKENARIO B: Playlist atau Tidak Loop --
+      // Gunakan concat demuxer standar tapi dengan ghost playlist untuk keamanan
       else {
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           
-          let playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
-          
-          // Jika loop playlist, kita duplikasi isi playlist di txt (Ghost Playlist)
-          // Ini lebih aman untuk playlist MP4 daripada stream_loop pada concat demuxer
+          // Escape single quote untuk FFmpeg concat list
+          const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
+          let playlistContent = safeFiles.join('\n');
+
+          // Jika loop playlist banyak file, kita duplikasi listnya
           if (loop) {
-             const original = '\n' + playlistContent;
-             // Ulangi 500x cukup untuk streaming berhari-hari
-             for(let i=0; i<500; i++) playlistContent += original;
+             const oneSet = '\n' + playlistContent;
+             for(let i=0; i<100; i++) playlistContent += oneSet;
           }
 
           fs.writeFileSync(currentPlaylistPath, playlistContent);
@@ -133,51 +168,29 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
                      '-safe', '0', 
                      '-re'
                  ]);
+                 
+          // Standard Filter untuk Playlist
+          command.complexFilter([
+             { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
+             { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
+             { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
+             { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' },
+             
+             { filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' },
+             { filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' }
+          ], ['v_out', 'a_out']);
       }
-      
-      // UNIVERSAL VIDEO FILTER
-      // Memaksa FPS stabil ke 30 dan membuat timestamp baru
-      command.complexFilter([
-         // 1. Video: Scale -> Pad -> Format -> FPS -> SetPTS
-         {
-            filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease',
-            inputs: '0:v', outputs: 'scaled'
-         },
-         {
-            filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-            inputs: 'scaled', outputs: 'padded'
-         },
-         {
-            filter: 'format', options: 'yuv420p',
-            inputs: 'padded', outputs: 'formatted'
-         },
-         {
-             filter: 'fps', options: 'fps=30', // PAKSA STABIL 30 FPS
-             inputs: 'formatted', outputs: 'fps_fixed'
-         },
-         {
-            filter: 'setpts', options: 'N/FRAME_RATE/TB', // Buat ulang waktu video dari 0
-            inputs: 'fps_fixed', outputs: 'v_out'
-         },
-         
-         // 2. Audio: Resample + Async Sync + SetPTS
-         {
-            filter: 'aresample', options: '44100:async=1', // Async=1 memperbaiki drift audio saat loop
-            inputs: '0:a', outputs: 'resampled'
-         },
-         {
-            filter: 'asetpts', options: 'N/SR/TB', // Buat ulang waktu audio sample count
-            inputs: 'resampled', outputs: 'a_out'
-         }
-      ], ['v_out', 'a_out']);
 
+      // -- OUTPUT OPTIONS (SAMA UNTUK KEDUA SKENARIO VIDEO) --
       command.outputOptions([
-        '-map [v_out]', '-map [a_out]', // Ambil hasil filter
+        '-map [v_out]', '-map [a_out]',
         
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency',
-        '-r 30', '-g 60', // Keyframe interval 2 detik (Wajib YouTube)
+        '-r 30', '-g 60', // Keyframe wajib tiap 2 detik
+        '-pix_fmt yuv420p',
         
-        '-b:v 3000k', '-minrate 3000k', '-maxrate 3000k', '-bufsize 6000k', '-nal-hrd cbr',
+        '-b:v 2500k', '-minrate 2500k', '-maxrate 2500k', '-bufsize 5000k', // Bitrate stabil
+        '-nal-hrd cbr',
         
         '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',
         
@@ -209,7 +222,6 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       })
       .on('progress', (progress) => {
         const currentTimemark = progress.timemark; 
-        // Parsing timemark sederhana
         let totalSeconds = 0;
         if(currentTimemark) {
             const parts = currentTimemark.split(':');
@@ -252,7 +264,7 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
         } else {
             if (!err.message.includes('SIGKILL') && !err.message.includes('write after end')) {
                 console.error(`[FFmpeg Error Stream ${streamId}] ${err.message}`);
-                if(stderr) console.error(stderr);
+                // if(stderr) console.error(stderr);
             }
         }
         cleanupStream(streamId);
