@@ -37,7 +37,6 @@ const checkFileHasAudio = (filePath) => {
 
 // Helper: Generate Playlist Content
 const createPlaylistFile = (files, outputPath) => {
-    // Generate file list for ffmpeg concat demuxer
     const safeFiles = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`);
     const content = safeFiles.join('\n');
     fs.writeFileSync(outputPath, content);
@@ -62,78 +61,85 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
 
     // =========================================================
     // MODE 3: HYBRID (VIDEO CLIP + MP3 AUDIO)
-    // "Mp4 sebagai visual, MP3 sebagai suara"
+    // "Mp4 sebagai visual (Master Clock), MP3 sebagai suara (Slave Loop)"
     // =========================================================
     if (videoFiles.length > 0 && mp3Files.length > 0) {
-        console.log(`[Stream ${streamId}] Mode: HYBRID (Visual: MP4, Audio: Playlist Concat)`);
+        console.log(`[Stream ${streamId}] Mode: HYBRID (Visual: MP4, Audio: MP3)`);
         
         // --- INPUT 0: VISUAL (VIDEO) ---
-        // Video selalu di-loop visualnya
-        command.input(videoFiles[0]).inputOptions([
-            '-stream_loop', '-1', 
-            '-re'
-        ]);
+        // Video menggunakan -re (Realtime) sebagai master clock
+        // Jika loop visual mati, stream mati saat video habis. Jika hidup, video muter terus.
+        const vidOpts = ['-re'];
+        // Kita paksa loop visual video agar audio MP3 punya waktu untuk terus bermain
+        vidOpts.unshift('-stream_loop', '-1'); 
+        
+        command.input(videoFiles[0]).inputOptions(vidOpts);
 
         // --- INPUT 1: AUDIO (MP3) ---
-        // FORCE PLAYLIST STRATEGY (Paling Stabil untuk Loop)
-        const uniqueId = streamId;
-        currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
-        createPlaylistFile(mp3Files, currentPlaylistPath);
+        // CRITICAL FIX: JANGAN PAKAI '-re' DI SINI. Biarkan audio ditarik secepat kilat oleh FFmpeg mengikuti video.
         
-        // Urutan opsi sangat krusial: -stream_loop HARUS sebelum -i (input)
-        const audioInputOptions = ['-f', 'concat', '-safe', '0', '-re'];
-        
-        // Jika loop aktif, tambahkan opsi loop ke demuxer concat
-        if (loop) {
-            // Unshift agar berada di paling depan: -stream_loop -1 -f concat ...
-            audioInputOptions.unshift('-stream_loop', '-1'); 
-        }
+        if (mp3Files.length === 1 && loop) {
+            // Single File Direct Loop
+            command.input(mp3Files[0]).inputOptions(['-stream_loop', '-1']);
+        } else {
+            // Playlist Loop
+            const uniqueId = streamId;
+            currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
+            createPlaylistFile(mp3Files, currentPlaylistPath);
+            
+            const audioInputOptions = ['-f', 'concat', '-safe', '0']; // NO -re
+            if (loop) audioInputOptions.unshift('-stream_loop', '-1'); 
 
-        command.input(currentPlaylistPath).inputOptions(audioInputOptions);
+            command.input(currentPlaylistPath).inputOptions(audioInputOptions);
+        }
 
         // COMPLEX FILTER
         command.complexFilter([
-            // Video Processing (Input 0) - Ambil Video Saja
+            // Video Processing (Input 0)
             { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
             { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
             { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
             { filter: 'setpts', options: 'N/FRAME_RATE/TB', inputs: 'fps_v', outputs: 'v_out' },
             
-            // Audio Processing (Input 1) - Ambil Audio Saja
+            // Audio Processing (Input 1)
             { filter: 'aresample', options: '44100:async=1', inputs: '1:a', outputs: 'resampled' },
             { filter: 'aformat', options: 'sample_fmts=fltp:channel_layouts=stereo', inputs: 'resampled', outputs: 'a_out' }
         ]);
         
-        command.addOption('-max_muxing_queue_size', '4096');
+        command.addOption('-max_muxing_queue_size', '9999');
     }
 
     // =========================================================
     // MODE 1: AUDIO ONLY (IMAGE + MP3)
     // =========================================================
     else if (videoFiles.length === 0 && mp3Files.length > 0) {
-        console.log(`[Stream ${streamId}] Mode: AUDIO ONLY (Image + Playlist Concat)`);
+        console.log(`[Stream ${streamId}] Mode: AUDIO ONLY (Image + MP3)`);
 
         // --- INPUT 0: COVER IMAGE ---
+        // Image LOOP dan -re sebagai master clock
         if (!coverImagePath || !fs.existsSync(coverImagePath)) {
             command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f', 'lavfi', '-re']);
         } else {
-            // Loop image infinite
             command.input(coverImagePath).inputOptions(['-loop', '1', '-framerate', '25', '-re']); 
         }
 
         // --- INPUT 1: AUDIO ---
-        // FORCE PLAYLIST STRATEGY
-        const uniqueId = streamId;
-        currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_music_${uniqueId}.txt`);
-        createPlaylistFile(mp3Files, currentPlaylistPath);
+        // CRITICAL FIX: JANGAN PAKAI '-re' DI SINI.
+        
+        if (mp3Files.length === 1 && loop) {
+             // Single File Direct Loop (Paling Stabil)
+             command.input(mp3Files[0]).inputOptions(['-stream_loop', '-1']);
+        } else {
+            // Playlist Mode
+            const uniqueId = streamId;
+            currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_music_${uniqueId}.txt`);
+            createPlaylistFile(mp3Files, currentPlaylistPath);
 
-        const musicInputOpts = ['-f', 'concat', '-safe', '0', '-re'];
-        if (loop) {
-            // Force infinite loop pada level concat demuxer
-            musicInputOpts.unshift('-stream_loop', '-1');
+            const musicInputOpts = ['-f', 'concat', '-safe', '0']; // NO -re
+            if (loop) musicInputOpts.unshift('-stream_loop', '-1');
+
+            command.input(currentPlaylistPath).inputOptions(musicInputOpts);
         }
-
-        command.input(currentPlaylistPath).inputOptions(musicInputOpts);
       
         command.complexFilter([
             // Video (Image) Processing
@@ -151,23 +157,21 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     // MODE 2: VIDEO ONLY (MP4 Original)
     // =========================================================
     else {
+      // Logic Video Only tetap menggunakan standard playlist
       let hasFileAudio = false;
       try {
           hasFileAudio = await checkFileHasAudio(files[0]);
           console.log(`[Stream ${streamId}] Audio Detected: ${hasFileAudio}`);
       } catch(e) {}
 
-      // Untuk Video juga kita standarisasi menggunakan Playlist agar konsisten
-      // Kecuali user benar-benar hanya 1 file video (simple loop)
       if (files.length === 1 && loop) {
           command.input(files[0]).inputOptions([
               '-re', 
-              '-stream_loop', '-1', // Loop input video standard
+              '-stream_loop', '-1', 
               '-fflags', '+genpts',
               '-map_metadata', '-1' 
           ]);
       } else {
-          // Playlist Logic
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           createPlaylistFile(files, currentPlaylistPath);
@@ -178,12 +182,11 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           command.input(currentPlaylistPath).inputOptions(vidInputOpts);
       }
 
-      // Input #1: Silence (Cadangan jika video bisu)
+      // Input #1: Silence
       command.input('anullsrc=channel_layout=stereo:sample_rate=44100')
              .inputFormat('lavfi');
 
       const filters = [
-          // Video: Scale & Pad
           { filter: 'scale', options: '1280:720:force_original_aspect_ratio=decrease', inputs: '0:v', outputs: 'scaled' },
           { filter: 'pad', options: '1280:720:(ow-iw)/2:(oh-ih)/2:color=black', inputs: 'scaled', outputs: 'padded' },
           { filter: 'fps', options: 'fps=30', inputs: 'padded', outputs: 'fps_v' },
@@ -191,12 +194,10 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
       ];
 
       if (hasFileAudio) {
-          // Gunakan audio dari Video (Input 0)
           filters.push({ filter: 'aresample', options: '44100:async=1', inputs: '0:a', outputs: 'resampled' });
           filters.push({ filter: 'aformat', options: 'sample_fmts=fltp:channel_layouts=stereo', inputs: 'resampled', outputs: 'formatted' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'formatted', outputs: 'a_out' });
       } else {
-          // Gunakan silence (Input 1)
           filters.push({ filter: 'aresample', options: '44100', inputs: '1:a', outputs: 'resampled' });
           filters.push({ filter: 'asetpts', options: 'N/SR/TB', inputs: 'resampled', outputs: 'a_out' });
       }
