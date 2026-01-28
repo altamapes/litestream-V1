@@ -70,6 +70,21 @@
         .digital-glow {
             text-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
         }
+
+        /* FIX: Toggle Switch Animation CSS */
+        .toggle-checkbox { 
+            right: auto; 
+            left: 0; 
+            transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1); 
+        }
+        .toggle-checkbox:checked { 
+            right: 0; 
+            left: auto; 
+            border-color: #6366f1; 
+        }
+        .toggle-checkbox:checked + .toggle-label { 
+            background-color: #6366f1; 
+        }
     </style>
 </head>
 <body class="min-h-screen">
@@ -574,6 +589,9 @@
             modalWrapper.classList.add('flex');
             document.getElementById('modal-stream-title').value = '';
             document.getElementById('modal-stream-desc').value = '';
+            // FIX: Reset toggle loop ke posisi mati setiap kali buka modal
+            document.getElementById('modal-loop-toggle').checked = false;
+            
             requestAnimationFrame(() => { modalCard.classList.add('active'); });
             modalSelectedMedia.clear();
             updateModalSelectionCount();
