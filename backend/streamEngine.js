@@ -12,7 +12,6 @@ const activeStreams = new Map();
 const killZombieProcesses = () => {
     return new Promise((resolve) => {
          console.log('Cleaning up zombie FFmpeg processes...');
-         // Pkill akan mematikan semua proses ffmpeg di sistem agar tidak ada stream hantu
          exec('pkill -f ffmpeg', (err, stdout, stderr) => {
              activeStreams.clear();
              console.log('System clean. All streams reset.');
@@ -39,29 +38,41 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     // --- AUDIO HANDLING ---
     if (isAllAudio) {
       
-      // OPTIMIZED FOR LOW END VPS (1 Core, 1GB RAM)
-      // Added 'noise' filter to prevent bitrate drop on static images
+      // Video Filter: Scale, Pad, and Noise (to keep bitrate active)
       const videoFilter = [
         'scale=1280:720:force_original_aspect_ratio=decrease',
         'pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
-        'noise=alls=1:allf=t+u', // Micro-noise to make encoder work harder
+        'noise=alls=1:allf=t+u', 
         'format=yuv420p'
       ].join(',');
 
-      // Input 1: Image/Color (Background)
+      // Input 0: Image/Color (Background)
       if (!coverImagePath || !fs.existsSync(coverImagePath)) {
         command.input('color=c=black:s=1280x720:r=25').inputOptions(['-f lavfi', '-re']);
       } else {
-        // -loop 1 ensures the image repeats infinitely for the video track
         command.input(coverImagePath).inputOptions(['-loop 1', '-framerate 25', '-re']); 
       }
 
-      // Input 2: Audio Stream
-      // FIX LOOPING ISSUE: If single file + loop, use native ffmpeg loop (-stream_loop -1)
+      // Input 1: Audio Stream
+      // FIX LOOP STOPPING: Use CONCAT method even for single file if LOOP is ON
       if (files.length === 1 && loop) {
-          command.input(files[0]).inputOptions(['-stream_loop -1', '-re']);
+          const uniqueId = streamId;
+          currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_audio_${uniqueId}.txt`);
+          
+          // Create a wrapper playlist for the single file
+          // "stream_loop" works perfectly on concat inputs, but sometimes fails on raw mp3 inputs
+          const playlistContent = `file '${path.resolve(files[0]).replace(/'/g, "'\\''")}'`;
+          fs.writeFileSync(currentPlaylistPath, playlistContent);
+
+          command.input(currentPlaylistPath)
+                 .inputOptions([
+                     '-f concat', 
+                     '-safe 0', 
+                     '-stream_loop -1', // Loop the playlist infinitely
+                     '-re'              // Read at native speed
+                 ]);
       } 
-      // Multi-file playlist logic (Manual Piping)
+      // Multi-file playlist logic (Manual Piping via Node Stream)
       else {
           const mixedStream = new PassThrough();
           activeInputStream = mixedStream;
@@ -96,19 +107,19 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           command.input(mixedStream).inputFormat('mp3').inputOptions(['-re']);
       }
 
-      // OUTPUT OPTIONS FOR AUDIO MODE
+      // OUTPUT OPTIONS (Force High Bitrate CBR for YouTube)
       command.outputOptions([
         '-map 0:v', '-map 1:a', `-vf ${videoFilter}`,
         '-c:v libx264', '-preset ultrafast', '-tune zerolatency', 
         '-r 25', '-g 50', '-keyint_min 50', '-sc_threshold 0', 
         
-        // FIX BITRATE WARNING: Force Constant Bitrate (CBR) with padding
-        '-b:v 3000k',       // Target 3000kbps (Higher than YouTube's 2500k req)
-        '-minrate 3000k',   // Force minimum
-        '-maxrate 3000k',   // Force maximum
-        '-bufsize 6000k',   // 2x Buffer
-        '-nal-hrd cbr',     // Enforce strict CBR (Fills with dummy data if image is static)
-        '-x264-params nal-hrd=cbr', // Double ensure for x264
+        // FORCE 3000kbps Constant Bitrate
+        '-b:v 3000k',       
+        '-minrate 3000k',   
+        '-maxrate 3000k',   
+        '-bufsize 6000k',   
+        '-nal-hrd cbr',     
+        '-x264-params nal-hrd=cbr', 
         
         '-c:a aac', '-b:a 128k', '-ar 44100', '-af aresample=async=1',
         '-f flv', '-flvflags no_duration_filesize'
@@ -117,25 +128,22 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
     } 
     // --- VIDEO HANDLING ---
     else {
-      // Standardize Video Filter: Scale to 720p, Pad to 16:9
       const videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black';
       
-      // LOGIC BRANCH: Single File vs Playlist
       if (files.length === 1) {
-          // --- SINGLE FILE MODE (More Stable) ---
+          // Single Video File
           const singleFile = files[0];
           command.input(singleFile);
           
-          const inputOpts = ['-re']; // Read at native frame rate
+          const inputOpts = ['-re']; 
           if (loop) inputOpts.unshift('-stream_loop', '-1');
           command.inputOptions(inputOpts);
 
       } else {
-          // --- PLAYLIST MODE (Using Concat Demuxer) ---
+          // Playlist Video
           const uniqueId = streamId;
           currentPlaylistPath = path.join(__dirname, 'uploads', `playlist_${uniqueId}.txt`);
           
-          // Escape single quotes for ffmpeg concat file
           const playlistContent = files.map(f => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
           fs.writeFileSync(currentPlaylistPath, playlistContent);
 
@@ -145,29 +153,24 @@ const startStream = (inputPaths, rtmpUrl, options = {}) => {
           command.input(currentPlaylistPath).inputOptions(videoInputOpts);
       }
       
-      // UNIVERSAL OUTPUT OPTIONS (Transcoding)
+      // Video Output Options
       command.outputOptions([
         '-c:v libx264',
         '-preset ultrafast', 
         '-tune zerolatency',
         `-vf ${videoFilter}`,
         '-pix_fmt yuv420p',
-        '-r 30',
-        '-g 60',            
-        '-b:v 3000k',       // Bumped to 3000k
+        '-r 30', '-g 60',            
+        '-b:v 3000k',       
         '-minrate 3000k',   
         '-maxrate 3000k',   
         '-bufsize 6000k',   
         '-nal-hrd cbr',     
         '-max_muxing_queue_size 9999', 
-        '-c:a aac',
-        '-ar 44100',
-        '-b:a 128k',
-        '-ac 2',            
+        '-c:a aac', '-ar 44100', '-b:a 128k', '-ac 2',            
         '-af aresample=async=1', 
         '-bsf:a aac_adtstoasc',
-        '-f flv',
-        '-flvflags no_duration_filesize'
+        '-f flv', '-flvflags no_duration_filesize'
       ]);
     }
 
